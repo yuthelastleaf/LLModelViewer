@@ -1,0 +1,12 @@
+{
+  "name": "opengl-model-viewer",
+  "version": "1.0.0",
+  "description": "Qt-based OpenGL 3D model viewer with Assimp",
+  "dependencies": [
+    "assimp",
+    "glad",
+    "glm",
+    "stb",
+    "fmt"
+  ]
+}
