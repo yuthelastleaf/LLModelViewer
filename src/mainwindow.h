@@ -2,15 +2,11 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QToolBar>
-#include <QMenuBar>
-#include <QStatusBar>
-#include <QDockWidget>
-#include <QTreeWidget>
-#include <QSlider>
 #include <QLabel>
+#include <QDockWidget>
 
 class GLWidget;
+class Demo;
 
 class MainWindow : public QMainWindow
 {
@@ -20,12 +16,16 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    // Demo 类型枚举
+    enum class DemoType {
+        Triangle,
+        Texture,
+        Model
+    };
+
 private slots:
-    void onOpenFile();
-    void onSaveFile();
-    void onResetView();
-    void onShowWireframe(bool checked);
     void onUpdateFPS(int fps);
+    void onDemoChanged(Demo *demo);
 
 private:
     void setupUI();
@@ -33,12 +33,15 @@ private:
     void createToolBar();
     void createDockWidgets();
     void createStatusBar();
+    
+    // Demo 管理
+    void loadDemo(DemoType type);
+    void updateControlPanel(Demo *demo);
 
+    // UI 组件
     GLWidget *glWidget;
-    QToolBar *mainToolBar;
-    QDockWidget *propertyDock;
     QDockWidget *sceneDock;
-    QTreeWidget *sceneTree;
+    QDockWidget *controlDock;
     QLabel *fpsLabel;
 };
 
