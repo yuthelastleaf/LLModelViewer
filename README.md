@@ -77,3 +77,8 @@ cmake -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cma
 也可以不通过创建文件的方式创建，也是ctrl+shift+P选择edit user-local cmake kits,保证cmake的路径正常，从而保证编译的时候使用正确的编译器。
 当然上述都是在windows 系统上的处理。
 
+cmake编译的时候需要设定vcpkg的路径，不然vcpkg的库没有
+cmake -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+这样配置了cmake之后，在vscode中才能使用vcpkg下载的库，那么linux也是相同的。
+
+cmake编译的时候，glad库什么的找不到，有时候就是cmakelists中没有写find_package从而还没在vcpkg中找到相关的库，所以才无法链接库的

@@ -1,284 +1,193 @@
-#include "mainwindow.h"
-#include "glwidget.h"
-#include "Demo.h"
-#include "TriangleDemo.h"
-// #include "TextureDemo.h"
-// #include "ModelDemo.h"
-
+#include "MainWindow.h"
+#include "base/opengl/glwidget.h"
+#include "demo/triangle/TriangleDemo.h"
 #include <QMenuBar>
-#include <QToolBar>
+#include <QMenu>
+#include <QAction>
 #include <QStatusBar>
 #include <QDockWidget>
-#include <QTreeWidget>
-#include <QVBoxLayout>
-#include <QGroupBox>
 #include <QLabel>
-#include <QPushButton>
+#include <QApplication>
 #include <QMessageBox>
-#include <QScrollArea>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    setupUI();
+    // 创建 GLWidget
+    glWidget = new GLWidget(this);
+    setCentralWidget(glWidget);
     
-    setWindowTitle("OpenGL Demo Framework - Qt");
+    // 注册 Demo
+    registerDemos();
+    
+    // 创建菜单
+    createMenus();
+    
+    // 创建停靠窗口
+    createDockWindows();
+    
+    // 连接信号
+    connectSignals();
+    
+    // 设置窗口
+    setWindowTitle("OpenGL Demo Framework");
     resize(1280, 720);
+    
+    // 加载第一个 Demo
+    glWidget->loadDemo("triangle");
 }
 
 MainWindow::~MainWindow()
 {
 }
 
-void MainWindow::setupUI()
+void MainWindow::registerDemos()
 {
-    // 创建中央 OpenGL 窗口
-    glWidget = new GLWidget(this);
-    setCentralWidget(glWidget);
+    // 注册三角形 Demo
+    glWidget->registerDemo<TriangleDemo>("triangle", "Basic");
     
-    // 创建停靠窗口
-    createDockWidgets();
-    
-    // 创建菜单栏
-    createMenuBar();
-    
-    // 创建工具栏
-    createToolBar();
-    
-    // 创建状态栏
-    createStatusBar();
-    
-    // 连接信号
-    connect(glWidget, &GLWidget::fpsUpdated, this, &MainWindow::onUpdateFPS);
-    connect(glWidget, &GLWidget::demoChanged, this, &MainWindow::onDemoChanged);
+    // 未来可以在这里注册更多 Demo
+    // glWidget->registerDemo<CubeDemo>("cube", "Basic");
+    // glWidget->registerDemo<LightingDemo>("lighting", "Lighting");
 }
 
-void MainWindow::createMenuBar()
+void MainWindow::createMenus()
 {
-    // ============================================
     // 文件菜单
-    // ============================================
-    QMenu *fileMenu = menuBar()->addMenu("文件(&F)");
+    QMenu *fileMenu = menuBar()->addMenu("&File");
     
-    QAction *exitAction = fileMenu->addAction("退出(&X)");
+    QAction *exitAction = new QAction("E&xit", this);
     exitAction->setShortcut(QKeySequence::Quit);
+    exitAction->setStatusTip("Exit the application");
     connect(exitAction, &QAction::triggered, this, &QWidget::close);
+    fileMenu->addAction(exitAction);
     
-    // ============================================
     // Demo 菜单
-    // ============================================
-    QMenu *demoMenu = menuBar()->addMenu("Demos(&D)");
+    QMenu *demoMenu = menuBar()->addMenu("&Demo");
     
-    QAction *triangleDemoAction = demoMenu->addAction("Triangle Demo");
-    connect(triangleDemoAction, &QAction::triggered, [this]() {
-        loadDemo(DemoType::Triangle);
-    });
-    
-    QAction *textureDemoAction = demoMenu->addAction("Texture Demo");
-    connect(textureDemoAction, &QAction::triggered, [this]() {
-        loadDemo(DemoType::Texture);
-    });
-    
-    QAction *modelDemoAction = demoMenu->addAction("Model Demo");
-    connect(modelDemoAction, &QAction::triggered, [this]() {
-        loadDemo(DemoType::Model);
-    });
+    QAction *clearDemoAction = new QAction("&Clear Demo", this);
+    clearDemoAction->setStatusTip("Clear current demo");
+    connect(clearDemoAction, &QAction::triggered, glWidget, &GLWidget::clearDemo);
+    demoMenu->addAction(clearDemoAction);
     
     demoMenu->addSeparator();
     
-    QAction *clearDemoAction = demoMenu->addAction("Clear Demo");
-    connect(clearDemoAction, &QAction::triggered, [this]() {
-        glWidget->clearDemo();
-        updateControlPanel(nullptr);
-        statusBar()->showMessage("Demo cleared");
-    });
+    // 动态创建 Demo 菜单项
+    updateDemoMenu(demoMenu);
     
-    // ============================================
     // 视图菜单
-    // ============================================
-    QMenu *viewMenu = menuBar()->addMenu("视图(&V)");
+    viewMenu = menuBar()->addMenu("&View");
     
-    viewMenu->addAction(sceneDock->toggleViewAction());
-    viewMenu->addAction(controlDock->toggleViewAction());
+    // 渲染菜单
+    QMenu *renderMenu = menuBar()->addMenu("&Render");
     
-    // ============================================
+    QAction *vsyncAction = new QAction("V-Sync (60 FPS)", this);
+    vsyncAction->setCheckable(true);
+    vsyncAction->setChecked(false);
+    connect(vsyncAction, &QAction::toggled, [this](bool checked) {
+        glWidget->setTargetFPS(checked ? 60 : 0);
+        statusBar()->showMessage(checked ? "V-Sync enabled (60 FPS)" : "V-Sync disabled (unlimited FPS)", 2000);
+    });
+    renderMenu->addAction(vsyncAction);
+    
+    QAction *pauseAction = new QAction("&Pause Rendering", this);
+    pauseAction->setCheckable(true);
+    pauseAction->setShortcut(Qt::Key_Space);
+    connect(pauseAction, &QAction::toggled, [this](bool checked) {
+        glWidget->setAutoUpdate(!checked);
+        statusBar()->showMessage(checked ? "Rendering paused" : "Rendering resumed", 2000);
+    });
+    renderMenu->addAction(pauseAction);
+    
     // 帮助菜单
-    // ============================================
-    QMenu *helpMenu = menuBar()->addMenu("帮助(&H)");
-    QAction *aboutAction = helpMenu->addAction("关于(&A)");
-    connect(aboutAction, &QAction::triggered, [this]() {
-        QMessageBox::about(this, "关于", 
-            "OpenGL Demo Framework (Qt)\n\n"
-            "基于 Qt + OpenGL 的演示框架\n"
-            "支持多个可切换的 Demo\n\n"
-            "控制说明:\n"
-            "  WASD - 移动相机\n"
-            "  鼠标拖动 - 旋转视角\n"
-            "  滚轮 - 缩放\n"
-            "  R - 重置相机");
-    });
+    QMenu *helpMenu = menuBar()->addMenu("&Help");
+    
+    QAction *aboutAction = new QAction("&About", this);
+    connect(aboutAction, &QAction::triggered, this, &MainWindow::showAbout);
+    helpMenu->addAction(aboutAction);
 }
 
-void MainWindow::createToolBar()
+void MainWindow::updateDemoMenu(QMenu *demoMenu)
 {
-    QToolBar *mainToolBar = addToolBar("主工具栏");
-    mainToolBar->setMovable(false);
+    // 获取所有分类
+    QStringList categories = glWidget->getCategories();
+    categories.sort();
     
-    // Demo 快速切换按钮
-    QAction *triangleAction = mainToolBar->addAction("Triangle");
-    connect(triangleAction, &QAction::triggered, [this]() {
-        loadDemo(DemoType::Triangle);
-    });
-    
-    QAction *textureAction = mainToolBar->addAction("Texture");
-    connect(textureAction, &QAction::triggered, [this]() {
-        loadDemo(DemoType::Texture);
-    });
-    
-    QAction *modelAction = mainToolBar->addAction("Model");
-    connect(modelAction, &QAction::triggered, [this]() {
-        loadDemo(DemoType::Model);
-    });
-    
-    mainToolBar->addSeparator();
-    
-    QAction *clearAction = mainToolBar->addAction("Clear");
-    connect(clearAction, &QAction::triggered, [this]() {
-        glWidget->clearDemo();
-        updateControlPanel(nullptr);
-    });
+    for (const QString &category : categories) {
+        QMenu *categoryMenu = demoMenu->addMenu(category);
+        
+        // 获取该分类下的所有 Demo
+        QStringList demoIds = glWidget->getDemosByCategory(category);
+        demoIds.sort();
+        
+        for (const QString &id : demoIds) {
+            const DemoInfo *info = glWidget->getDemoInfo(id);
+            if (info) {
+                QAction *action = new QAction(info->name, this);
+                action->setStatusTip(info->description);
+                connect(action, &QAction::triggered, [this, id]() {
+                    glWidget->loadDemo(id);
+                });
+                categoryMenu->addAction(action);
+            }
+        }
+    }
 }
 
-void MainWindow::createDockWidgets()
+void MainWindow::createDockWindows()
 {
-    // ============================================
-    // 场景树停靠窗口（左侧）
-    // ============================================
-    sceneDock = new QDockWidget("Scene", this);
-    sceneDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    // Demo 选择器停靠窗口
+    QDockWidget *selectorDock = glWidget->createDemoSelectorDock(this);
+    selectorDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    addDockWidget(Qt::LeftDockWidgetArea, selectorDock);
+    viewMenu->addAction(selectorDock->toggleViewAction());
     
-    QTreeWidget *sceneTree = new QTreeWidget();
-    sceneTree->setHeaderLabel("Scene Objects");
-    
-    QTreeWidgetItem *rootItem = new QTreeWidgetItem(sceneTree);
-    rootItem->setText(0, "Scene Root");
-    rootItem->setExpanded(true);
-    
-    sceneDock->setWidget(sceneTree);
-    addDockWidget(Qt::LeftDockWidgetArea, sceneDock);
-    
-    // ============================================
-    // 控制面板停靠窗口（右侧）
-    // ============================================
-    controlDock = new QDockWidget("Controls", this);
+    // 控制面板停靠窗口
+    QDockWidget *controlDock = glWidget->createControlPanelDock(this);
     controlDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    
-    // 使用滚动区域包装控制面板
-    QScrollArea *scrollArea = new QScrollArea();
-    scrollArea->setWidgetResizable(true);
-    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    
-    // 默认控制面板（无 Demo 时显示）
-    QWidget *defaultPanel = new QWidget();
-    QVBoxLayout *defaultLayout = new QVBoxLayout(defaultPanel);
-    defaultLayout->addWidget(new QLabel("No Demo loaded.\nSelect a demo from the menu."));
-    defaultLayout->addStretch();
-    
-    scrollArea->setWidget(defaultPanel);
-    controlDock->setWidget(scrollArea);
     addDockWidget(Qt::RightDockWidgetArea, controlDock);
+    viewMenu->addAction(controlDock->toggleViewAction());
 }
 
-void MainWindow::createStatusBar()
+void MainWindow::connectSignals()
 {
+    // FPS 显示
     fpsLabel = new QLabel("FPS: 0");
-    fpsLabel->setMinimumWidth(80);
     statusBar()->addPermanentWidget(fpsLabel);
     
-    statusBar()->showMessage("就绪 - 请选择一个 Demo");
+    connect(glWidget, &GLWidget::fpsUpdated, [this](int fps) {
+        fpsLabel->setText(QString("FPS: %1").arg(fps));
+    });
+    
+    // 状态消息
+    connect(glWidget, &GLWidget::statusMessage, [this](const QString &msg) {
+        statusBar()->showMessage(msg, 3000);
+    });
+    
+    // Demo 切换
+    connect(glWidget, &GLWidget::demoChanged, [this](Demo *demo, const QString &id) {
+        if (demo) {
+            setWindowTitle(QString("OpenGL Demo Framework - %1").arg(demo->getName()));
+            statusBar()->showMessage(QString("Loaded: %1").arg(demo->getName()), 3000);
+        } else {
+            setWindowTitle("OpenGL Demo Framework");
+            statusBar()->showMessage("No demo loaded", 3000);
+        }
+    });
 }
 
-// ============================================
-// Demo 管理
-// ============================================
-
-void MainWindow::loadDemo(DemoType type)
+void MainWindow::showAbout()
 {
-    std::unique_ptr<Demo> demo;
-    
-    switch (type) {
-        case DemoType::Triangle:
-            demo = std::make_unique<TriangleDemo>();
-            break;
-            
-        case DemoType::Texture:
-            // demo = std::make_unique<TextureDemo>();
-            statusBar()->showMessage("Texture Demo - 待实现");
-            return;
-            
-        case DemoType::Model:
-            // demo = std::make_unique<ModelDemo>();
-            statusBar()->showMessage("Model Demo - 待实现");
-            return;
-            
-        default:
-            return;
-    }
-    
-    if (demo) {
-        // 连接 Demo 的状态消息信号
-        connect(demo.get(), &Demo::statusMessage, 
-                statusBar(), &QStatusBar::showMessage);
-        
-        // 连接参数变化信号（用于触发重绘）
-        connect(demo.get(), &Demo::parameterChanged,
-                glWidget, QOverload<>::of(&QWidget::update));
-        
-        // 加载 Demo
-        glWidget->setDemo(std::move(demo));
-    }
-}
-
-void MainWindow::onDemoChanged(Demo *demo)
-{
-    updateControlPanel(demo);
-    
-    if (demo) {
-        statusBar()->showMessage("Loaded: " + demo->getName());
-    } else {
-        statusBar()->showMessage("No demo loaded");
-    }
-}
-
-void MainWindow::updateControlPanel(Demo *demo)
-{
-    QScrollArea *scrollArea = qobject_cast<QScrollArea*>(controlDock->widget());
-    if (!scrollArea) return;
-    
-    // 删除旧的控制面板
-    QWidget *oldPanel = scrollArea->widget();
-    if (oldPanel) {
-        scrollArea->takeWidget();
-        oldPanel->deleteLater();
-    }
-    
-    // 创建新的控制面板
-    QWidget *newPanel = nullptr;
-    
-    if (demo) {
-        newPanel = demo->createControlPanel();
-    } else {
-        // 默认面板
-        newPanel = new QWidget();
-        QVBoxLayout *layout = new QVBoxLayout(newPanel);
-        layout->addWidget(new QLabel("No Demo loaded.\nSelect a demo from the menu."));
-        layout->addStretch();
-    }
-    
-    scrollArea->setWidget(newPanel);
-}
-
-void MainWindow::onUpdateFPS(int fps)
-{
-    fpsLabel->setText(QString("FPS: %1").arg(fps));
+    QMessageBox::about(this, "About OpenGL Demo Framework",
+        "<h2>OpenGL Demo Framework</h2>"
+        "<p>A flexible framework for creating and managing OpenGL demos.</p>"
+        "<p><b>Features:</b></p>"
+        "<ul>"
+        "<li>Easy demo registration and management</li>"
+        "<li>Built-in camera system</li>"
+        "<li>Light management</li>"
+        "<li>Interactive control panels</li>"
+        "</ul>"
+        "<p>Built with Qt and OpenGL 3.3+</p>"
+    );
 }

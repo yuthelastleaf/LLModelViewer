@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QPoint>
 #include <memory>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -10,7 +11,7 @@
 // 前向声明
 class Camera;
 class LightManager;
-class GridAxisHelper;
+// class GridAxisHelper;
 class QKeyEvent;
 class QMouseEvent;
 class QWheelEvent;
@@ -96,6 +97,11 @@ public:
      * 处理鼠标滚轮
      */
     virtual void processMouseWheel(QWheelEvent *event);
+    
+    /**
+     * 处理窗口大小变化
+     */
+    virtual void resizeViewport(int width, int height);
 
     // ============================================
     // 访问器
@@ -107,7 +113,11 @@ public:
     LightManager* getLightManager() { return lightManager.get(); }
     const LightManager* getLightManager() const { return lightManager.get(); }
     
-    GridAxisHelper* getGridAxisHelper() { return gridAxisHelper.get(); }
+    // GridAxisHelper* getGridAxisHelper() { return gridAxisHelper.get(); }
+    // const GridAxisHelper* getGridAxisHelper() const { return gridAxisHelper.get(); }
+    
+    int getViewportWidth() const { return viewportWidth; }
+    int getViewportHeight() const { return viewportHeight; }
 
     // ============================================
     // 控制面板创建 - 子类可重写以添加自定义控件
@@ -174,7 +184,7 @@ protected:
     
     std::unique_ptr<Camera> camera;
     std::unique_ptr<LightManager> lightManager;
-    std::unique_ptr<GridAxisHelper> gridAxisHelper;
+    // std::unique_ptr<GridAxisHelper> gridAxisHelper;
     
     // 窗口尺寸（用于投影矩阵）
     int viewportWidth;
