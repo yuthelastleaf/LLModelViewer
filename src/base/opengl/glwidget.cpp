@@ -1,5 +1,6 @@
 #include "GLWidget.h"
 #include "../Demo.h"
+#include "../camera/Camera.h"
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QWheelEvent>
@@ -490,7 +491,7 @@ void GLWidget::resizeGL(int w, int h)
 }
 
 void GLWidget::paintGL()
-{~
+{
     input->beginFrame();
     calculateDeltaTime();
     
@@ -509,12 +510,13 @@ void GLWidget::paintGL()
     }
 
     if (currentDemo) {
-        if (input->isKeyDown(Qt::Key_W)) currentDemo->camera.processKeyboard(CameraMovement::FORWARD,  deltaTime);
-        if (input->isKeyDown(Qt::Key_S)) currentDemo->camera.processKeyboard(CameraMovement::BACKWARD, deltaTime);
-        if (input->isKeyDown(Qt::Key_A)) currentDemo->camera.processKeyboard(CameraMovement::LEFT,     deltaTime);
-        if (input->isKeyDown(Qt::Key_D)) currentDemo->camera.processKeyboard(CameraMovement::RIGHT,    deltaTime);
-        if (input->isKeyDown(Qt::Key_E)) currentDemo->camera.processKeyboard(CameraMovement::UP,       deltaTime);
-        if (input->isKeyDown(Qt::Key_Q)) currentDemo->camera.processKeyboard(CameraMovement::DOWN,     deltaTime);
+        if (input->isKeyDown(Qt::Key_W)) currentDemo->processKeyPress(CameraMovement::FORWARD,  deltaTime);
+        if (input->isKeyDown(Qt::Key_S)) currentDemo->processKeyPress(CameraMovement::BACKWARD, deltaTime);
+        if (input->isKeyDown(Qt::Key_A)) currentDemo->processKeyPress(CameraMovement::LEFT,     deltaTime);
+        if (input->isKeyDown(Qt::Key_D)) currentDemo->processKeyPress(CameraMovement::RIGHT,    deltaTime);
+        if (input->isKeyDown(Qt::Key_E)) currentDemo->processKeyPress(CameraMovement::UP,       deltaTime);
+        if (input->isKeyDown(Qt::Key_Q)) currentDemo->processKeyPress(CameraMovement::DOWN,     deltaTime);
+        if (input->isKeyDown(Qt::Key_R)) currentDemo->processKeyPress(CameraMovement::RESET,    deltaTime);
     }
     
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

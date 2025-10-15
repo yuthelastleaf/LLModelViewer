@@ -1,5 +1,4 @@
 #include "Demo.h"
-#include "camera/Camera.h"
 #include "light/LightManager.h"
 // #include "grid/GridAxisHelper.h"
 #include <QKeyEvent>
@@ -45,34 +44,18 @@ Demo::~Demo()
 // 默认输入处理实现
 // ============================================
 
-void Demo::processKeyPress(QKeyEvent *event)
-{
-    if (!e->isAutoRepeat()) {
-        input.onKeyPress(e);
-    }
-
-    const float moveSpeed = 0.1f;
-    
-    switch (event->key()) {
-        case Qt::Key_W:
-            camera->processKeyboard(CameraMovement::FORWARD, moveSpeed);
+void Demo::processKeyPress(CameraMovement qtKey, float deltaTime)
+{    
+    switch (qtKey) {
+        case CameraMovement::FORWARD:
+        case CameraMovement::BACKWARD:
+        case CameraMovement::LEFT:
+        case CameraMovement::RIGHT:
+        case CameraMovement::UP:
+        case CameraMovement::DOWN:
+            camera->processKeyboard(qtKey, deltaTime);
             break;
-        case Qt::Key_S:
-            camera->processKeyboard(CameraMovement::BACKWARD, moveSpeed);
-            break;
-        case Qt::Key_A:
-            camera->processKeyboard(CameraMovement::LEFT, moveSpeed);
-            break;
-        case Qt::Key_D:
-            camera->processKeyboard(CameraMovement::RIGHT, moveSpeed);
-            break;
-        case Qt::Key_Q:
-            camera->processKeyboard(CameraMovement::UP, moveSpeed);
-            break;
-        case Qt::Key_E:
-            camera->processKeyboard(CameraMovement::DOWN, moveSpeed);
-            break;
-        case Qt::Key_R:
+        case CameraMovement::RESET:
             camera->reset();
             emit statusMessage("Camera reset");
             emit parameterChanged();
@@ -82,12 +65,10 @@ void Demo::processKeyPress(QKeyEvent *event)
     }
 }
 
-void Demo::processMousePress(QMouseEvent *event)
+void Demo::processMousePress(QPoint point)
 {
-    if (event->button() == Qt::LeftButton) {
-        isMousePressed = true;
-        lastMousePos = event->pos();
-    }
+    isMousePressed = true;
+    lastMousePos = point;
 }
 
 void Demo::processMouseMove(QMouseEvent *event)

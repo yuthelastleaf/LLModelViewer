@@ -9,6 +9,8 @@
 #include <functional>
 #include <map>
 
+#include "../input/inputmanager.h"
+
 // 前向声明
 class Demo;
 class QDockWidget;

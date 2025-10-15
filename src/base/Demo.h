@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include "input/inputmanager.h"
+#include "camera/Camera.h"
 
 // 前向声明
 class Camera;
@@ -77,12 +78,12 @@ public:
     /**
      * 处理键盘按键
      */
-    virtual void processKeyPress(QKeyEvent *event);
+    virtual void processKeyPress(CameraMovement qtKey, float deltaTime);
     
     /**
      * 处理鼠标按下
      */
-    virtual void processMousePress(QMouseEvent *event);
+    virtual void processMousePress(QPoint point);
     
     /**
      * 处理鼠标移动
@@ -185,7 +186,6 @@ protected:
     
     std::unique_ptr<Camera> camera;
     std::unique_ptr<LightManager> lightManager;
-    std::unique_ptr<InputManager> input;
     // std::unique_ptr<GridAxisHelper> gridAxisHelper;
     
     // 窗口尺寸（用于投影矩阵）

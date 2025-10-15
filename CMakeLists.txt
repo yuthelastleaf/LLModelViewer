@@ -65,6 +65,7 @@ set(MAIN_SOURCES
     src/mainwindow.cpp
     src/base/opengl/glwidget.h
     src/base/opengl/glwidget.cpp
+    src/base/input/inputmanager.h
 )
 
 # Demo 系统基础类

@@ -6,8 +6,9 @@
 #include <QMouseEvent>
 #include <QKeyEvent>
 
+
+
 class InputManager {
-    Q_OBJECT
 public:
     InputManager() {}
 
