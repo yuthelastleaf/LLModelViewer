@@ -9,7 +9,8 @@
 #include <QDoubleSpinBox>
 #include <QCheckBox>
 #include <QTimer>
-#include <glad/glad.h>
+#include <QDebug>
+// 移除 #include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
 
 TriangleDemo::TriangleDemo(QObject *parent)
@@ -21,21 +22,37 @@ TriangleDemo::TriangleDemo(QObject *parent)
     , autoRotate(true)
     , triangleScale(0.5f)
 {
+    qDebug() << "TriangleDemo created";
 }
 
 TriangleDemo::~TriangleDemo()
 {
+    qDebug() << "TriangleDemo destroying...";
     cleanup();
 }
 
 void TriangleDemo::initialize()
 {
-    qDebug() << "initialize read shader";
+    // 初始化 Qt 的 OpenGL 函数（必须在使用任何 OpenGL 函数前调用）
+    if (!initializeOpenGLFunctions()) {
+        qCritical() << "Failed to initialize OpenGL functions in TriangleDemo!";
+        return;
+    }
+    
+    qDebug() << "TriangleDemo: OpenGL functions initialized";
+    qDebug() << "TriangleDemo: Reading shaders...";
+    
     // 创建着色器
-    shader = std::make_unique<Shader>(
-        "shaders/triangle.vs",
-        "shaders/triangle.fs"
-    );
+    try {
+        shader = std::make_unique<Shader>(
+            "shaders/triangle/triangle.vs",
+            "shaders/triangle/triangle.fs"
+        );
+        qDebug() << "TriangleDemo: Shaders created successfully";
+    } catch (const std::exception& e) {
+        qCritical() << "Failed to create shader:" << e.what();
+        return;
+    }
     
     // 定义三角形顶点数据
     // 每个顶点: 位置(x,y,z) + 颜色(r,g,b)
@@ -46,7 +63,7 @@ void TriangleDemo::initialize()
          0.0f,  0.5f, 0.0f,  0.0f, 0.0f, 1.0f   // 顶部 - 蓝色
     };
     
-    qDebug() << "Initializing genvbuffer";
+    qDebug() << "TriangleDemo: Generating VAO and VBO...";
 
     // 生成并绑定 VAO
     glGenVertexArrays(1, &VAO);
@@ -70,6 +87,16 @@ void TriangleDemo::initialize()
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
     
+    qDebug() << "TriangleDemo: VAO =" << VAO << ", VBO =" << VBO;
+    
+    // 检查 OpenGL 错误
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        qCritical() << "OpenGL error during initialization:" << err;
+    } else {
+        qDebug() << "TriangleDemo: Initialization complete, no OpenGL errors";
+    }
+    
     emit statusMessage("Triangle Demo initialized");
 }
 
@@ -88,6 +115,18 @@ void TriangleDemo::update(float deltaTime)
 
 void TriangleDemo::render()
 {
+    // 检查着色器是否有效
+    if (!shader) {
+        qWarning() << "TriangleDemo: Shader is null, cannot render";
+        return;
+    }
+    
+    // 检查 VAO 是否有效
+    if (VAO == 0) {
+        qWarning() << "TriangleDemo: VAO is 0, cannot render";
+        return;
+    }
+    
     // 使用着色器
     shader->use();
     
@@ -112,21 +151,38 @@ void TriangleDemo::render()
     glBindVertexArray(VAO);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);
+    
+    // 检查 OpenGL 错误（仅在调试时启用）
+    #ifdef _DEBUG
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        qWarning() << "OpenGL error in render:" << err;
+    }
+    #endif
 }
 
 void TriangleDemo::cleanup()
 {
+    qDebug() << "TriangleDemo: Cleaning up resources...";
+    
     if (VAO != 0) {
         glDeleteVertexArrays(1, &VAO);
+        qDebug() << "TriangleDemo: Deleted VAO" << VAO;
         VAO = 0;
     }
     
     if (VBO != 0) {
         glDeleteBuffers(1, &VBO);
+        qDebug() << "TriangleDemo: Deleted VBO" << VBO;
         VBO = 0;
     }
     
-    shader.reset();
+    if (shader) {
+        shader.reset();
+        qDebug() << "TriangleDemo: Shader reset";
+    }
+    
+    qDebug() << "TriangleDemo: Cleanup complete";
 }
 
 // ============================================

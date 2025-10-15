@@ -2,6 +2,7 @@
 #define TRIANGLEDEMO_H
 
 #include "../../base/Demo.h"
+#include <QOpenGLFunctions_3_3_Core>  // 添加 Qt OpenGL
 #include <memory>
 
 // 前向声明
@@ -16,7 +17,7 @@ class Shader;
  * - 演示着色器的基本使用
  * - 演示简单的动画
  */
-class TriangleDemo : public Demo
+class TriangleDemo : public Demo, protected QOpenGLFunctions_3_3_Core  // 继承 Qt OpenGL
 {
     Q_OBJECT
 
@@ -65,8 +66,8 @@ private slots:
 private:
     // OpenGL 资源
     std::unique_ptr<Shader> shader;
-    uint VAO;
-    uint VBO;
+    GLuint VAO;  // 使用 GLuint 而不是 uint
+    GLuint VBO;
     
     // 动画参数
     float rotation;          // 当前旋转角度

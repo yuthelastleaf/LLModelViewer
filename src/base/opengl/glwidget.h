@@ -276,6 +276,7 @@ private:
     
     // Demo 管理
     std::unique_ptr<Demo> currentDemo;
+    std::unique_ptr<InputManager> input;
     QString currentDemoId;
     
     // UI 组件（弱引用，生命周期由外部管理）

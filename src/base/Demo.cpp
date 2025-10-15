@@ -47,6 +47,10 @@ Demo::~Demo()
 
 void Demo::processKeyPress(QKeyEvent *event)
 {
+    if (!e->isAutoRepeat()) {
+        input.onKeyPress(e);
+    }
+
     const float moveSpeed = 0.1f;
     
     switch (event->key()) {

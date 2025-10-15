@@ -1,4 +1,3 @@
-#include <glad/glad.h>
 #include "GLWidget.h"
 #include "../Demo.h"
 #include <QMouseEvent>
@@ -19,6 +18,7 @@
 GLWidget::GLWidget(QWidget *parent)
     : QOpenGLWidget(parent)
     , currentDemo(nullptr)
+    , input(std::make_unique<InputManager>())
     , controlPanelDock(nullptr)
     , autoUpdate(true)
     , targetFPS(0)
@@ -39,7 +39,6 @@ GLWidget::GLWidget(QWidget *parent)
     
     // 设置焦点策略以接收键盘事件
     setFocusPolicy(Qt::StrongFocus);
-    
     qDebug() << "GLWidget created";
 }
 
@@ -491,7 +490,7 @@ void GLWidget::resizeGL(int w, int h)
 }
 
 void GLWidget::paintGL()
-{
+{~
     calculateDeltaTime();
     
     if (targetFPS > 0) {

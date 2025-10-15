@@ -4,7 +4,6 @@
   "description": "Qt-based OpenGL 3D model viewer with Assimp",
   "dependencies": [
     "assimp",
-    "glad",
     "glm",
     "stb",
     "fmt"

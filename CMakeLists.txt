@@ -52,7 +52,7 @@ find_package(Qt6 REQUIRED COMPONENTS
 # 查找OpenGL库
 find_package(OpenGL REQUIRED)
 # vcpkg 提供的库（可选，找不到会给警告）
-find_package(glad CONFIG)
+# find_package(glad CONFIG)
 find_package(assimp CONFIG)
 find_package(glm CONFIG)
 find_package(Stb)
@@ -128,7 +128,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenGL::GL
     
     # vcpkg 提供的库
-    glad::glad
+    # glad::glad
     assimp::assimp
     glm::glm
 )
@@ -219,6 +219,13 @@ if(WIN32)
         endif()
     endif()
 endif()
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/src/shaders"
+        $<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders
+    COMMENT "Copying resource directory"
+)
 
 # 打印配置信息
 message(STATUS "=== Build Configuration ===")

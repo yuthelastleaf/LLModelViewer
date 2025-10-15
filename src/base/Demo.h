@@ -7,6 +7,7 @@
 #include <memory>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include "input/inputmanager.h"
 
 // 前向声明
 class Camera;
@@ -184,6 +185,7 @@ protected:
     
     std::unique_ptr<Camera> camera;
     std::unique_ptr<LightManager> lightManager;
+    std::unique_ptr<InputManager> input;
     // std::unique_ptr<GridAxisHelper> gridAxisHelper;
     
     // 窗口尺寸（用于投影矩阵）
