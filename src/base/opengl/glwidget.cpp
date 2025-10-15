@@ -491,7 +491,9 @@ void GLWidget::resizeGL(int w, int h)
 
 void GLWidget::paintGL()
 {~
+    input->beginFrame();
     calculateDeltaTime();
+    
     
     if (targetFPS > 0) {
         qint64 currentTime = frameTimer.elapsed();
@@ -504,6 +506,15 @@ void GLWidget::paintGL()
         }
         
         lastUpdateTime = currentTime;
+    }
+
+    if (currentDemo) {
+        if (input->isKeyDown(Qt::Key_W)) currentDemo->camera.processKeyboard(CameraMovement::FORWARD,  deltaTime);
+        if (input->isKeyDown(Qt::Key_S)) currentDemo->camera.processKeyboard(CameraMovement::BACKWARD, deltaTime);
+        if (input->isKeyDown(Qt::Key_A)) currentDemo->camera.processKeyboard(CameraMovement::LEFT,     deltaTime);
+        if (input->isKeyDown(Qt::Key_D)) currentDemo->camera.processKeyboard(CameraMovement::RIGHT,    deltaTime);
+        if (input->isKeyDown(Qt::Key_E)) currentDemo->camera.processKeyboard(CameraMovement::UP,       deltaTime);
+        if (input->isKeyDown(Qt::Key_Q)) currentDemo->camera.processKeyboard(CameraMovement::DOWN,     deltaTime);
     }
     
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -531,46 +542,50 @@ void GLWidget::paintGL()
 
 void GLWidget::keyPressEvent(QKeyEvent *event)
 {
-    if (currentDemo) {
-        currentDemo->processKeyPress(event);
+    if (input) {
+        input->onKeyPress(event);
     }
     QOpenGLWidget::keyPressEvent(event);
 }
 
 void GLWidget::keyReleaseEvent(QKeyEvent *event)
 {
+    if (input) {
+        input->onKeyRelease(event);
+    }
     QOpenGLWidget::keyReleaseEvent(event);
 }
 
 void GLWidget::mousePressEvent(QMouseEvent *event)
 {
     setFocus();
-    if (currentDemo) {
-        currentDemo->processMousePress(event);
+    if(input) {
+        input->onMousePress(event);
     }
+
     QOpenGLWidget::mousePressEvent(event);
 }
 
 void GLWidget::mouseMoveEvent(QMouseEvent *event)
 {
-    if (currentDemo) {
-        currentDemo->processMouseMove(event);
+    if(input) {
+        input->onMouseMove(event);
     }
     QOpenGLWidget::mouseMoveEvent(event);
 }
 
 void GLWidget::mouseReleaseEvent(QMouseEvent *event)
 {
-    if (currentDemo) {
-        currentDemo->processMouseRelease(event);
+    if(input) {
+        input->onMouseRelease(event);
     }
     QOpenGLWidget::mouseReleaseEvent(event);
 }
 
 void GLWidget::wheelEvent(QWheelEvent *event)
 {
-    if (currentDemo) {
-        currentDemo->processMouseWheel(event);
+    if(input) {
+        input->onWheel(event);
     }
     QOpenGLWidget::wheelEvent(event);
 }
