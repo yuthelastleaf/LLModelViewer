@@ -72,7 +72,20 @@ set(MAIN_SOURCES
 set(DEMO_BASE_SOURCES
     src/base/Demo.h
     src/base/Demo.cpp
+    src/base/caddemo.h
+    src/base/caddemo.cpp
 )
+
+# cad 相关类
+set(CAD_BASE_SOURCES
+    src/cad/data/document.h
+    src/cad/data/document.cpp
+    src/cad/data/renderer.h
+    src/cad/data/renderer.cpp
+    src/cad/data/GridAxisHelper.h
+    src/cad/data/GridAxisHelper.cpp
+)
+
 
 # 具体 Demo 实现
 set(DEMO_IMPL_SOURCES
@@ -90,8 +103,6 @@ set(UTILITY_SOURCES
     src/base/camera/Camera.cpp
     src/base/light/LightManager.h
     src/base/light/LightManager.cpp
-    src/base/grid/GridAxisHelper.h
-    src/base/grid/GridAxisHelper.cpp
     src/base/util/shader.h
     src/base/util/shader.cpp
 )
@@ -106,6 +117,7 @@ set(UI_SOURCES
 set(PROJECT_SOURCES
     ${MAIN_SOURCES}
     ${DEMO_BASE_SOURCES}
+    ${CAD_BASE_SOURCES}
     ${DEMO_IMPL_SOURCES}
     ${UTILITY_SOURCES}
     ${UI_SOURCES}

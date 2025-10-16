@@ -517,6 +517,17 @@ void GLWidget::paintGL()
         if (input->isKeyDown(Qt::Key_E)) currentDemo->processKeyPress(CameraMovement::UP,       deltaTime);
         if (input->isKeyDown(Qt::Key_Q)) currentDemo->processKeyPress(CameraMovement::DOWN,     deltaTime);
         if (input->isKeyDown(Qt::Key_R)) currentDemo->processKeyPress(CameraMovement::RESET,    deltaTime);
+
+        if(input->isMouseDown(Qt::LeftButton)) {
+            currentDemo->processMousePress(input->mousePosition().toPoint());
+            currentDemo->processMouseMove(input->mouseDeltaPixels().toPoint());
+        } else {
+            currentDemo->processMouseRelease();
+        }
+
+        currentDemo->processMouseWheel(input->wheelDeltaY());
+
+        
     }
     
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

@@ -1,6 +1,5 @@
 #include "Demo.h"
 #include "light/LightManager.h"
-// #include "grid/GridAxisHelper.h"
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
@@ -18,10 +17,8 @@ Demo::Demo(QObject *parent)
     : QObject(parent)
     , camera(std::make_unique<Camera>())
     , lightManager(std::make_unique<LightManager>())
-    // , gridAxisHelper(std::make_unique<GridAxisHelper>())
     , viewportWidth(800)
     , viewportHeight(600)
-    , isMousePressed(false)
 {
     // 设置默认相机
     camera->SetPosition(glm::vec3(0.0f, 0.0f, 5.0f));
@@ -67,35 +64,25 @@ void Demo::processKeyPress(CameraMovement qtKey, float deltaTime)
 
 void Demo::processMousePress(QPoint point)
 {
-    isMousePressed = true;
-    lastMousePos = point;
+
 }
 
-void Demo::processMouseMove(QMouseEvent *event)
+void Demo::processMouseMove(QPoint pos)
 {
-    if (isMousePressed) {
-        QPoint delta = event->pos() - lastMousePos;
-        
-        float xOffset = delta.x() * 0.1f;
-        float yOffset = -delta.y() * 0.1f; // 反转 Y 轴
-        
-        camera->processMouseMovement(xOffset, yOffset);
-        
-        lastMousePos = event->pos();
-        emit parameterChanged();
-    }
+    float xOffset = pos.x() * 0.1f;
+    float yOffset = -pos.y() * 0.1f; // 反转 Y 轴
+    camera->processMouseMovement(xOffset, yOffset);
+    emit parameterChanged();
 }
 
-void Demo::processMouseRelease(QMouseEvent *event)
+void Demo::processMouseRelease()
 {
-    if (event->button() == Qt::LeftButton) {
-        isMousePressed = false;
-    }
+    
 }
 
-void Demo::processMouseWheel(QWheelEvent *event)
+void Demo::processMouseWheel(int offset)
 {
-    float yOffset = event->angleDelta().y() / 120.0f;
+    float yOffset = (float)offset / 120.0f;
     camera->processMouseScroll(yOffset);
     emit parameterChanged();
 }
@@ -145,7 +132,6 @@ QWidget* Demo::createControlPanel(QWidget *parent)
     // 添加通用控件
     layout->addWidget(createCameraControls(panel));
     layout->addWidget(createLightControls(panel));
-    layout->addWidget(createGridAxisControls(panel));
     
     // 添加弹性空间
     layout->addStretch();
@@ -308,17 +294,6 @@ QWidget* Demo::createLightControls(QWidget *parent)
         });
         layout->addWidget(clearBtn);
     }
-    
-    return group;
-}
-
-QWidget* Demo::createGridAxisControls(QWidget *parent)
-{
-    QGroupBox *group = new QGroupBox("Grid & Axis", parent);
-    QVBoxLayout *layout = new QVBoxLayout(group);
-    
-    // TODO: 添加网格/坐标轴控件
-    layout->addWidget(new QLabel("Grid/Axis controls coming soon..."));
     
     return group;
 }

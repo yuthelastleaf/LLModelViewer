@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "base/opengl/glwidget.h"
 #include "demo/triangle/TriangleDemo.h"
+#include "base/caddemo.h"
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
@@ -44,19 +45,22 @@ MainWindow::~MainWindow()
 void MainWindow::registerDemos()
 {
     // 注册三角形 Demo
-    glWidget->registerDemo<TriangleDemo>("triangle", "Basic");
-    
+    glWidget->registerDemo<CADDemo>("cad", "Basic");
+    glWidget->registerDemo<TriangleDemo>("triangle");
     // 未来可以在这里注册更多 Demo
     // glWidget->registerDemo<CubeDemo>("cube", "Basic");
     // glWidget->registerDemo<LightingDemo>("lighting", "Lighting");
 }
+
 
 void MainWindow::createMenus()
 {
     // 文件菜单
     QMenu *fileMenu = menuBar()->addMenu("&File");
     
-    QAction *exitAction = new QAction("E&xit", this);
+    QAction *exitAction = new 
+    
+    ("E&xit", this);
     exitAction->setShortcut(QKeySequence::Quit);
     exitAction->setStatusTip("Exit the application");
     connect(exitAction, &QAction::triggered, this, &QWidget::close);

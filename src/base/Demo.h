@@ -13,7 +13,6 @@
 // 前向声明
 class Camera;
 class LightManager;
-// class GridAxisHelper;
 class QKeyEvent;
 class QMouseEvent;
 class QWheelEvent;
@@ -88,17 +87,17 @@ public:
     /**
      * 处理鼠标移动
      */
-    virtual void processMouseMove(QMouseEvent *event);
+    virtual void processMouseMove(QPoint pos);
     
     /**
      * 处理鼠标释放
      */
-    virtual void processMouseRelease(QMouseEvent *event);
+    virtual void processMouseRelease();
     
     /**
      * 处理鼠标滚轮
      */
-    virtual void processMouseWheel(QWheelEvent *event);
+    virtual void processMouseWheel(int offset);
     
     /**
      * 处理窗口大小变化
@@ -114,9 +113,6 @@ public:
     
     LightManager* getLightManager() { return lightManager.get(); }
     const LightManager* getLightManager() const { return lightManager.get(); }
-    
-    // GridAxisHelper* getGridAxisHelper() { return gridAxisHelper.get(); }
-    // const GridAxisHelper* getGridAxisHelper() const { return gridAxisHelper.get(); }
     
     int getViewportWidth() const { return viewportWidth; }
     int getViewportHeight() const { return viewportHeight; }
@@ -174,11 +170,6 @@ protected:
      * 创建光照控制组件
      */
     QWidget* createLightControls(QWidget *parent = nullptr);
-    
-    /**
-     * 创建网格/坐标轴控制组件
-     */
-    QWidget* createGridAxisControls(QWidget *parent = nullptr);
 
     // ============================================
     // 成员变量
@@ -186,16 +177,10 @@ protected:
     
     std::unique_ptr<Camera> camera;
     std::unique_ptr<LightManager> lightManager;
-    // std::unique_ptr<GridAxisHelper> gridAxisHelper;
     
     // 窗口尺寸（用于投影矩阵）
     int viewportWidth;
     int viewportHeight;
-    
-private:
-    // 鼠标状态（用于相机控制）
-    QPoint lastMousePos;
-    bool isMousePressed;
 };
 
 #endif // DEMO_H

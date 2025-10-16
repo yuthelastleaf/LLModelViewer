@@ -82,3 +82,14 @@ cmake -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpk
 这样配置了cmake之后，在vscode中才能使用vcpkg下载的库，那么linux也是相同的。
 
 cmake编译的时候，glad库什么的找不到，有时候就是cmakelists中没有写find_package从而还没在vcpkg中找到相关的库，所以才无法链接库的
+
+开发规划：
+MVP 里程碑：
+
+v0.1 Viewer：加载 Document，渲染实体；平移/缩放、网格显示、坐标轴。
+v0.2 选择 & 框选：Pick、SelectionManager、选中高亮。
+v0.3 变换 Gizmo：移动工具（单轴/任意）、命令栈 Undo/Redo。
+v0.4 绘制工具：Line/Polyline/Circle；捕捉（网格/端点/中点）；预览几何。
+v0.5 属性/图层：属性面板编辑颜色线宽；图层显示/锁定；ByLayer。
+v0.6 存盘/读盘：JSON *.mcd；工程设置（单位/精度）。
+v0.7 几何运算：偏移/倒角/圆角（可先调用简化算法，后续抽象成 Kernel）
