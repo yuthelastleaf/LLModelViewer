@@ -8,8 +8,7 @@
 #include <memory>
 
 /**
- * CAD Demo - 基于 Document/Renderer 的 CAD 演示
- * 专门用于 2D/3D CAD 绘图应用
+ * CAD Demo - 支持 2D/3D 模式切换的 CAD 应用
  */
 class CADDemo : public Demo
 {
@@ -30,11 +29,11 @@ public:
     
     QString getName() const override { return "CAD Viewer"; }
     QString getDescription() const override { 
-        return "2D/3D CAD viewer with document management"; 
+        return "2D/3D CAD viewer with mode switching"; 
     }
 
     // ============================================
-    // CAD 特定的输入处理
+    // 输入处理
     // ============================================
     
     void processKeyPress(CameraMovement qtKey, float deltaTime) override;
@@ -45,7 +44,7 @@ public:
     void resizeViewport(int width, int height) override;
 
     // ============================================
-    // CAD 文档访问
+    // 文档访问
     // ============================================
     
     Document* getDocument() { return document_.get(); }
@@ -66,7 +65,12 @@ public slots:
     void setAxisVisible(bool visible);
     void resetView();
     
-    // 测试用：添加一些示例实体
+    // ✅ 2D/3D 模式切换
+    void switch2DMode(bool enable);
+    void setViewOrientation(int orientation);  // 0=Top, 1=Front, 2=Right
+    void setIsometricView();
+    
+    // 文档操作
     void addTestEntities();
     void clearDocument();
 
@@ -86,7 +90,7 @@ private:
     QWidget* createDocumentControls(QWidget *parent = nullptr);
 
     // ============================================
-    // CAD 核心组件
+    // 核心组件
     // ============================================
     
     std::unique_ptr<Document> document_;
@@ -100,11 +104,10 @@ private:
     // 显示选项
     bool showGrid_;
     bool showAxis_;
-    bool documentDirty_;  // 文档是否有变化
+    bool documentDirty_;
     
-    // 鼠标交互状态
+    // 鼠标交互
     bool isPanning_;
-    QPoint lastMousePos_;
 };
 
 #endif // CADDEMO_H

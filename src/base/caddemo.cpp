@@ -1,4 +1,4 @@
-#include "CADDemo.h"
+#include "caddemo.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -6,6 +6,9 @@
 #include <QPushButton>
 #include <QCheckBox>
 #include <QSpinBox>
+#include <QRadioButton>
+#include <QButtonGroup>
+#include <QPointer>
 #include <glm/gtc/matrix_transform.hpp>
 
 CADDemo::CADDemo(QObject *parent)
@@ -19,10 +22,14 @@ CADDemo::CADDemo(QObject *parent)
     , documentDirty_(true)
     , isPanning_(false)
 {
-    // 设置 CAD 相机的默认位置（俯视图）
-    camera->SetPosition(glm::vec3(0.0f, 0.0f, 10.0f));
+    // ✅ 默认设置为 2D CAD 俯视图
     camera->SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
-    camera->SetType(CameraType::ORBIT);
+    camera->SetTopView(10.0f);
+    
+    qDebug() << "CAD Camera initialized (2D mode):";
+    qDebug() << "  Position:" << camera->position.x << camera->position.y << camera->position.z;
+    qDebug() << "  Target:" << camera->target.x << camera->target.y << camera->target.z;
+    qDebug() << "  Is 2D:" << camera->is2D();
     
     // 初始化视口状态
     viewportState_.width = viewportWidth;
@@ -40,23 +47,17 @@ CADDemo::~CADDemo()
 
 void CADDemo::initialize()
 {
-    // 初始化 Renderer（会自动调用 initializeOpenGLFunctions）
     if (!renderer_->initialize()) {
         emit statusMessage("Failed to initialize renderer");
         return;
     }
     
-    // 添加测试实体
     addTestEntities();
-    
     emit statusMessage("CAD Demo initialized");
 }
 
 void CADDemo::update(float deltaTime)
 {
-    // CAD 应用通常不需要每帧更新
-    // 但可以在这里处理动画、相机平滑移动等
-    
     if (documentDirty_) {
         syncRendererFromDocument();
         documentDirty_ = false;
@@ -65,14 +66,9 @@ void CADDemo::update(float deltaTime)
 
 void CADDemo::render()
 {
-    // 更新视口状态
     updateViewportState();
     
-    // 设置 OpenGL 状态（假设已经在外部有OpenGL上下文）
-    // 注意：这些调用需要在有OpenGL上下文的地方进行
-    // 如果Demo基类或GLWidget已经设置，这里可以省略
-    
-    // 绘制网格（最先绘制，在背景）
+    // 绘制网格
     if (showGrid_) {
         gridRenderer_->draw(*renderer_, viewportState_);
     }
@@ -82,7 +78,7 @@ void CADDemo::render()
         axisRenderer_->draw(*renderer_, viewportState_, 100.0f);
     }
     
-    // 绘制文档中的所有实体
+    // 绘制文档实体
     renderer_->draw(viewportState_);
 }
 
@@ -103,49 +99,31 @@ void CADDemo::cleanup()
 
 void CADDemo::processKeyPress(CameraMovement qtKey, float deltaTime)
 {
-    // 调用基类的相机控制
     Demo::processKeyPress(qtKey, deltaTime);
     
-    // CAD 特定的快捷键
-    switch (qtKey) {
-        case CameraMovement::RESET:
-            resetView();
-            break;
-        default:
-            break;
+    if (qtKey == CameraMovement::RESET) {
+        resetView();
     }
 }
 
 void CADDemo::processMousePress(QPoint point)
 {
     isPanning_ = true;
-    lastMousePos_ = point;
 }
 
 void CADDemo::processMouseMove(QPoint pos)
 {
     if (!isPanning_) return;
     
-    QPoint delta = pos - lastMousePos_;
-    lastMousePos_ = pos;
-    
-    // 根据相机类型处理鼠标移动
-    if (camera->GetType() == CameraType::ORBIT) {
-        // 轨道相机：旋转
-        float xOffset = delta.x() * 0.5f;
-        float yOffset = -delta.y() * 0.5f;
+    if (camera->is2D()) {
+        // ✅ 2D 模式：平移
+        camera->pan2D((float)pos.x(), (float)pos.y(), viewportState_.worldPerPixel);
+    }
+    else {
+        // ✅ 3D 模式：旋转
+        float xOffset = pos.x() * 0.5f;
+        float yOffset = -pos.y() * 0.5f;
         camera->processMouseMovement(xOffset, yOffset);
-    } else {
-        // 其他相机类型：平移
-        float sensitivity = viewportState_.worldPerPixel * 2.0f;
-        glm::vec3 right = camera->getRight();
-        glm::vec3 up = camera->getUp();
-        
-        glm::vec3 offset = -right * (float)delta.x() * sensitivity 
-                         + up * (float)delta.y() * sensitivity;
-        
-        camera->position += offset;
-        camera->target += offset;
     }
     
     emit parameterChanged();
@@ -158,13 +136,12 @@ void CADDemo::processMouseRelease()
 
 void CADDemo::processMouseWheel(int offset)
 {
-    // 缩放
     float delta = (float)offset / 120.0f;
     camera->processMouseScroll(delta);
     
-    // 更新视口的 worldPerPixel（用于自适应细分）
+    // 更新视口参数
     viewportState_.updateWorldPerPixel();
-    documentDirty_ = true;  // 标记需要重新细分圆弧
+    documentDirty_ = true;
     
     emit parameterChanged();
 }
@@ -198,10 +175,7 @@ void CADDemo::setAxisVisible(bool visible)
 
 void CADDemo::resetView()
 {
-    camera->SetPosition(glm::vec3(0.0f, 0.0f, 10.0f));
-    camera->SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
     camera->reset();
-    
     viewportState_.updateWorldPerPixel();
     documentDirty_ = true;
     
@@ -209,11 +183,55 @@ void CADDemo::resetView()
     emit parameterChanged();
 }
 
+void CADDemo::switch2DMode(bool enable)
+{
+    camera->set2DMode(enable);
+    
+    viewportState_.updateWorldPerPixel();
+    documentDirty_ = true;
+    
+    emit statusMessage(enable ? "Switched to 2D mode" : "Switched to 3D mode");
+    emit parameterChanged();
+}
+
+void CADDemo::setViewOrientation(int orientation)
+{
+    View2DOrientation view = static_cast<View2DOrientation>(orientation);
+    
+    switch (view) {
+        case View2DOrientation::TOP:
+            camera->SetTopView(camera->radius);
+            emit statusMessage("Top view");
+            break;
+        case View2DOrientation::FRONT:
+            camera->SetFrontView(camera->radius);
+            emit statusMessage("Front view");
+            break;
+        case View2DOrientation::RIGHT:
+            camera->SetRightView(camera->radius);
+            emit statusMessage("Right view");
+            break;
+    }
+    
+    viewportState_.updateWorldPerPixel();
+    documentDirty_ = true;
+    emit parameterChanged();
+}
+
+void CADDemo::setIsometricView()
+{
+    camera->SetIsometricView(camera->radius);
+    
+    viewportState_.updateWorldPerPixel();
+    documentDirty_ = true;
+    
+    emit statusMessage("Isometric view");
+    emit parameterChanged();
+}
+
 void CADDemo::addTestEntities()
 {
-    // 添加一些测试图元
-    
-    // 红色正方形（Polyline）
+    // 红色正方形
     std::vector<glm::vec3> square = {
         {-2.0f, -2.0f, 0.0f},
         { 2.0f, -2.0f, 0.0f},
@@ -231,7 +249,7 @@ void CADDemo::addTestEntities()
                       glm::vec3(3.0f, 0.0f, 0.0f),
                       Style::fromRGBA(0, 255, 0, 255));
     
-    // 黄色圆弧（90度）
+    // 黄色圆弧
     document_->addArc(glm::vec3(2.0f, 2.0f, 0.0f), 1.0f, 
                      0.0f, glm::radians(90.0f),
                      Style::fromRGBA(255, 255, 0, 255));
@@ -274,10 +292,7 @@ void CADDemo::updateViewportState()
 
 void CADDemo::syncRendererFromDocument()
 {
-    // 同步文档到渲染器（增量更新）
     renderer_->syncFromDocument(*document_, viewportState_);
-    
-    // 清除文档的脏标记
     document_->clearAllDirtyFlags();
 }
 
@@ -290,14 +305,10 @@ QWidget* CADDemo::createControlPanel(QWidget *parent)
     QWidget *panel = new QWidget(parent);
     QVBoxLayout *layout = new QVBoxLayout(panel);
     
-    // CAD 特定控件
     layout->addWidget(createCADControls(panel));
     layout->addWidget(createDocumentControls(panel));
-    
-    // 通用控件
     layout->addWidget(createCameraControls(panel));
     
-    // 添加弹性空间
     layout->addStretch();
     
     return panel;
@@ -308,35 +319,84 @@ QWidget* CADDemo::createCADControls(QWidget *parent)
     QGroupBox *group = new QGroupBox("View Options", parent);
     QVBoxLayout *layout = new QVBoxLayout(group);
     
-    // 网格显示
+    // ✅ 2D/3D 模式切换
+    QGroupBox *modeGroup = new QGroupBox("View Mode");
+    QVBoxLayout *modeLayout = new QVBoxLayout(modeGroup);
+    
+    QRadioButton *mode2D = new QRadioButton("2D Mode");
+    QRadioButton *mode3D = new QRadioButton("3D Mode");
+    mode2D->setChecked(camera->is2D());
+    mode3D->setChecked(!camera->is2D());
+    
+    connect(mode2D, &QRadioButton::toggled, this, &CADDemo::switch2DMode);
+    
+    modeLayout->addWidget(mode2D);
+    modeLayout->addWidget(mode3D);
+    layout->addWidget(modeGroup);
+    
+    // ✅ 2D 视图方向选择
+    QGroupBox *viewGroup = new QGroupBox("2D Views");
+    QVBoxLayout *viewLayout = new QVBoxLayout(viewGroup);
+    
+    QPushButton *topBtn = new QPushButton("Top View (XY)");
+    QPushButton *frontBtn = new QPushButton("Front View (XZ)");
+    QPushButton *rightBtn = new QPushButton("Right View (YZ)");
+    
+    connect(topBtn, &QPushButton::clicked, [this]() { 
+        setViewOrientation((int)View2DOrientation::TOP); 
+    });
+    connect(frontBtn, &QPushButton::clicked, [this]() { 
+        setViewOrientation((int)View2DOrientation::FRONT); 
+    });
+    connect(rightBtn, &QPushButton::clicked, [this]() { 
+        setViewOrientation((int)View2DOrientation::RIGHT); 
+    });
+    
+    viewLayout->addWidget(topBtn);
+    viewLayout->addWidget(frontBtn);
+    viewLayout->addWidget(rightBtn);
+    layout->addWidget(viewGroup);
+    
+    // ✅ 3D 视图
+    QPushButton *isoBtn = new QPushButton("Isometric View (3D)");
+    connect(isoBtn, &QPushButton::clicked, this, &CADDemo::setIsometricView);
+    layout->addWidget(isoBtn);
+    
+    // 网格和坐标轴
     QCheckBox *gridCheckBox = new QCheckBox("Show Grid");
     gridCheckBox->setChecked(showGrid_);
     connect(gridCheckBox, &QCheckBox::toggled, this, &CADDemo::setGridVisible);
     layout->addWidget(gridCheckBox);
     
-    // 坐标轴显示
     QCheckBox *axisCheckBox = new QCheckBox("Show Axis");
     axisCheckBox->setChecked(showAxis_);
     connect(axisCheckBox, &QCheckBox::toggled, this, &CADDemo::setAxisVisible);
     layout->addWidget(axisCheckBox);
     
-    // 重置视图按钮
+    // 重置视图
     QPushButton *resetViewBtn = new QPushButton("Reset View");
     connect(resetViewBtn, &QPushButton::clicked, this, &CADDemo::resetView);
     layout->addWidget(resetViewBtn);
     
-    // 显示统计信息
+    // ✅ 统计信息（使用 QPointer 修复）
     QLabel *statsLabel = new QLabel();
-    auto updateStats = [this, statsLabel]() {
+    layout->addWidget(statsLabel);
+    
+    QPointer<QLabel> statsPtr(statsLabel);
+    auto updateStats = [this, statsPtr]() {
+        if (!statsPtr) return;
+        
         int entityCount = document_->all().size();
-        statsLabel->setText(QString("Entities: %1\nWorld/Pixel: %2")
+        QString mode = camera->is2D() ? "2D" : "3D";
+        statsPtr->setText(QString("Mode: %1\nEntities: %2\nWorld/Pixel: %3")
+            .arg(mode)
             .arg(entityCount)
             .arg(viewportState_.worldPerPixel, 0, 'f', 4));
     };
+    
     updateStats();
-    connect(this, &CADDemo::documentChanged, updateStats);
-    connect(this, &CADDemo::parameterChanged, updateStats);
-    layout->addWidget(statsLabel);
+    connect(this, &CADDemo::documentChanged, this, updateStats);
+    connect(this, &CADDemo::parameterChanged, this, updateStats);
     
     return group;
 }
@@ -346,20 +406,13 @@ QWidget* CADDemo::createDocumentControls(QWidget *parent)
     QGroupBox *group = new QGroupBox("Document", parent);
     QVBoxLayout *layout = new QVBoxLayout(group);
     
-    // 添加测试实体按钮
     QPushButton *addTestBtn = new QPushButton("Add Test Entities");
     connect(addTestBtn, &QPushButton::clicked, this, &CADDemo::addTestEntities);
     layout->addWidget(addTestBtn);
     
-    // 清除文档按钮
     QPushButton *clearBtn = new QPushButton("Clear Document");
     connect(clearBtn, &QPushButton::clicked, this, &CADDemo::clearDocument);
     layout->addWidget(clearBtn);
-    
-    // TODO: 将来添加更多文档操作
-    // - 保存/加载
-    // - 添加特定图元
-    // - 图层管理
     
     return group;
 }

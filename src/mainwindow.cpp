@@ -58,9 +58,7 @@ void MainWindow::createMenus()
     // 文件菜单
     QMenu *fileMenu = menuBar()->addMenu("&File");
     
-    QAction *exitAction = new 
-    
-    ("E&xit", this);
+    QAction *exitAction = new QAction("E&xit", this);
     exitAction->setShortcut(QKeySequence::Quit);
     exitAction->setStatusTip("Exit the application");
     connect(exitAction, &QAction::triggered, this, &QWidget::close);
