@@ -59,6 +59,11 @@ public:
     float panSensitivity = 1.0f;    // 2D 平移灵敏度
     float zoomSpeed = 0.1f;          // 2D 缩放速度
 
+    // ✅ 新增：视口信息
+    float worldPerPixel = 1.0f;      // 每像素对应的世界单位
+    int viewportWidth = 800;         // 视口宽度
+    int viewportHeight = 600;        // 视口高度
+
     CameraType type = CameraType::ORBIT;
 
     // 2D 模式特有属性

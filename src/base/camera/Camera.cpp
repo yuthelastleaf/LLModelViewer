@@ -2,6 +2,12 @@
 #include <algorithm>
 #include <QDebug>
 
+inline QDebug operator<<(QDebug dbg, const glm::vec3& v)
+{
+    dbg.nospace() << "(" << v.x << ", " << v.y << ", " << v.z << ")";
+    return dbg.space();
+}
+
 
 Camera::Camera(CameraType camType) : type(camType) {
     updateCameraVectors();
@@ -21,6 +27,8 @@ Camera::Camera(CameraType camType) : type(camType) {
 
 glm::mat4 Camera::getViewMatrix() const {
     if (type == CameraType::ORBIT || type == CameraType::ORTHO_2D) {
+        // qDebug() << "lookat params: " << position << "--" <<  position << "--" <<  up;
+
         return glm::lookAt(position, target, up);
     }
     else {
@@ -59,6 +67,7 @@ glm::mat4 Camera::getProjectionMatrix(float aspectRatio) const {
 void Camera::processMouseMovement(float deltaX, float deltaY) {
     if (type == CameraType::ORTHO_2D) {
         // 2D 模式：不处理旋转，由外部调用 pan2D()
+        // pan2D(deltaX, deltaY);
         return;
     }
     
@@ -84,7 +93,7 @@ void Camera::processMouseScroll(float deltaY) {
         // 2D 模式：调整正交视口大小（zoom）
         radius *= (1.0f - deltaY * zoomSpeed);
         radius = std::clamp(radius, 0.1f, 100.0f);
-        
+        updateOrbitPosition();
         // qDebug() << "2D Zoom: radius =" << radius;
     }
     else if (type == CameraType::ORBIT) {
@@ -172,7 +181,7 @@ void Camera::pan2D(float deltaX, float deltaY, float worldPerPixel) {
     target += panOffset;
     position += panOffset;
     
-    qDebug() << "2D Pan: target =" << target.x << target.y << target.z;
+    // qDebug() << "2D Pan: target =" << target.x << target.y << target.z;
 }
 
 void Camera::ProcessKeyboard(int direction, float deltaTime) {
@@ -283,9 +292,9 @@ void Camera::SetOrbitParams(float newRadius, float newYaw, float newPitch) {
 }
 
 void Camera::SetTopView(float distance) {
-    view2DOrientation = View2DOrientation::TOP;
+    view2DOrientation = View2DOrientation::RIGHT;
     SetType(CameraType::ORTHO_2D);
-    SetOrbitParams(distance, 0.0f, 89.9f);  // 俯视
+    SetOrbitParams(distance, 90.0f, 0.0f);  // 右视
     is2DMode = true;
 }
 
@@ -297,9 +306,9 @@ void Camera::SetFrontView(float distance) {
 }
 
 void Camera::SetRightView(float distance) {
-    view2DOrientation = View2DOrientation::RIGHT;
+    view2DOrientation = View2DOrientation::TOP;
     SetType(CameraType::ORTHO_2D);
-    SetOrbitParams(distance, 90.0f, 0.0f);  // 右视
+    SetOrbitParams(distance, 0.0f, 89.9f);  // 俯视
     is2DMode = true;
 }
 
@@ -352,6 +361,8 @@ void Camera::updateOrbitPosition() {
     float y = radius * sin(glm::radians(pitch));
     float z = radius * cos(glm::radians(pitch)) * sin(glm::radians(yaw));
 
+    qDebug() << "radius: " << radius << "  yaw:" << yaw << "- x = " << x << " pitch:" << pitch << " - y=" << y << " z=" << z;
+
     position = target + glm::vec3(x, y, z);
     front = glm::normalize(target - position);
     right = glm::normalize(glm::cross(front, worldUp));
@@ -361,9 +372,8 @@ void Camera::updateOrbitPosition() {
 void Camera::apply2DOrientation() {
     switch (view2DOrientation) {
         case View2DOrientation::TOP:
-            // 俯视图：从 +Y 看向 -Y，X 向右，Z 向上
-            yaw = 0.0f;
-            pitch = 89.9f;
+            yaw = 90.0f;
+            pitch = 0.0f;
             break;
             
         case View2DOrientation::FRONT:
@@ -373,9 +383,8 @@ void Camera::apply2DOrientation() {
             break;
             
         case View2DOrientation::RIGHT:
-            // 右视图：从 +X 看向 -X，Z 向右，Y 向上
-            yaw = 90.0f;
-            pitch = 0.0f;
+            yaw = 0.0f;
+            pitch = 89.9f;// 右视图：从 +X 看向 -X，Z 向右，Y 向上
             break;
     }
     

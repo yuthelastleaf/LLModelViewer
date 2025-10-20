@@ -187,32 +187,30 @@ void GLWidget::setDemo(std::unique_ptr<Demo> demo)
     // 清理旧的 Demo
     if (currentDemo) {
         qDebug() << "Cleaning up old demo:" << currentDemo->getName();
-        
-        // 断开旧 Demo 的信号
         disconnect(currentDemo.get(), nullptr, this, nullptr);
-        
         currentDemo->cleanup();
     }
     
-    // 设置新的 Demo
     currentDemo = std::move(demo);
     
     if (currentDemo) {
         qDebug() << "Setting up new demo:" << currentDemo->getName();
         
-        // 只有在 OpenGL 已初始化的情况下才初始化 Demo
         if (glInitialized) {
             currentDemo->initialize();
         }
         
-        // 设置视口尺寸
         currentDemo->resizeViewport(width(), height());
         
-        // 连接 Demo 的信号
+        // 连接信号
         connect(currentDemo.get(), &Demo::statusMessage,
                 this, &GLWidget::onDemoStatusMessage);
-        connect(currentDemo.get(), &Demo::parameterChanged,
-                this, &GLWidget::updateControlPanel);
+        
+        // ❌ 删除这个连接！不要每次参数改变都重建面板
+        // connect(currentDemo.get(), &Demo::parameterChanged,
+        //         this, &GLWidget::updateControlPanel);
+        
+        // ✅ 只触发重绘
         connect(currentDemo.get(), &Demo::parameterChanged,
                 this, [this]() { update(); });
         
@@ -227,8 +225,8 @@ void GLWidget::setDemo(std::unique_ptr<Demo> demo)
     
     emit demoChanged(currentDemo.get(), currentDemoId);
     
-    // 更新控制面板
-    updateControlPanel();
+    // ✅ 只在 demoChanged 信号中重建控制面板（已经在第 415-429 行有处理）
+    // 不需要这里再调用 updateControlPanel()
     
     update();
 }
