@@ -66,7 +66,10 @@ void CADDemo::render()
     // 绘制网格
     if (showGrid_)
     {
-        gridRenderer_->draw(*renderer_, viewportState_);
+        // 深色主题配色
+        std::uint32_t minorColor = 0x40404040;  // RGBA: (64, 64, 64, 64) - 深灰色，25%透明
+        std::uint32_t majorColor = 0x80808080;  // RGBA: (128, 128, 128, 128) - 灰色，50%透明
+        gridRenderer_->draw(*renderer_, viewportState_, minorColor, majorColor, 5);
     }
 
     // 绘制坐标轴

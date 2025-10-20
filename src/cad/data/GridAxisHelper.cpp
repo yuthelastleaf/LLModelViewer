@@ -73,14 +73,16 @@ void GridRenderer::draw(Renderer& r, const ViewportState& vp,
     linesMinor.reserve(4096);
     linesMajor.reserve(1024);
 
+    float gridZ = -0.01f;  // 负数表示向后
+
     // 垂直线
     float xStart = snapDown(minXY.x, minor);
     for (float x = xStart; x <= maxXY.x + 1e-6f; x += minor) {
         // 判断是否为主网格线（接近 major 的倍数）
         bool isMajor = std::fabs(std::fmod(x, major)) < minor * 0.1f;
         auto& dst = isMajor ? linesMajor : linesMinor;
-        dst.push_back({x, minXY.y, 0.0f});
-        dst.push_back({x, maxXY.y, 0.0f});
+        dst.push_back({x, minXY.y, -0.01f});
+        dst.push_back({x, maxXY.y, -0.01f});
     }
     
     // 水平线
@@ -88,8 +90,8 @@ void GridRenderer::draw(Renderer& r, const ViewportState& vp,
     for (float y = yStart; y <= maxXY.y + 1e-6f; y += minor) {
         bool isMajor = std::fabs(std::fmod(y, major)) < minor * 0.1f;
         auto& dst = isMajor ? linesMajor : linesMinor;
-        dst.push_back({minXY.x, y, 0.0f});
-        dst.push_back({maxXY.x, y, 0.0f});
+        dst.push_back({minXY.x, y, -0.01f});
+        dst.push_back({maxXY.x, y, -0.01f});
     }
 
     if (!linesMinor.empty()) r.drawLineSegments(linesMinor, minorColor, vp);
