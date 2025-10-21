@@ -76,6 +76,172 @@ void ViewportState::updateWorldPerPixel() {
     worldPerPixel = ndcWidth / (viewScale * float(width));
 }
 
+// ============================================
+// 屏幕坐标转世界坐标
+// ============================================
+glm::vec3 ViewportState::screenToWorld(int screenX, int screenY, float planeZ) const
+{
+    // 1. 屏幕坐标 → NDC（标准化设备坐标）
+    float ndcX = (2.0f * screenX) / width - 1.0f;
+    float ndcY = 1.0f - (2.0f * screenY) / height;  // Y 轴翻转
+    
+    return ndcToWorld(ndcX, ndcY, planeZ);
+}
+
+glm::vec3 ViewportState::screenToWorld(const QPoint& screenPos, float planeZ) const
+{
+    return screenToWorld(screenPos.x(), screenPos.y(), planeZ);
+}
+
+// ============================================
+// 世界坐标转屏幕坐标
+// ============================================
+glm::vec2 ViewportState::worldToScreen(const glm::vec3& worldPos) const
+{
+    // 1. 世界坐标 → 裁剪空间
+    glm::vec4 clipPos = proj * view * glm::vec4(worldPos, 1.0f);
+    
+    // 2. 透视除法 → NDC
+    if (std::abs(clipPos.w) < 1e-6f) {
+        // 防止除零
+        return glm::vec2(-1.0f, -1.0f);  // 无效坐标
+    }
+    
+    glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
+    
+    // 3. NDC → 屏幕坐标
+    float screenX = (ndc.x + 1.0f) * 0.5f * width;
+    float screenY = (1.0f - ndc.y) * 0.5f * height;  // Y 轴翻转
+    
+    return glm::vec2(screenX, screenY);
+}
+
+// ============================================
+// NDC 转世界坐标
+// ============================================
+glm::vec3 ViewportState::ndcToWorld(float ndcX, float ndcY, float planeZ) const
+{
+    // 1. 计算 view-projection 的逆矩阵
+    glm::mat4 invVP = glm::inverse(proj * view);
+    
+    // 2. 构造射线（从近平面到远平面）
+    glm::vec4 rayStart_clip = glm::vec4(ndcX, ndcY, -1.0f, 1.0f);  // 近平面（z=-1）
+    glm::vec4 rayEnd_clip = glm::vec4(ndcX, ndcY, 1.0f, 1.0f);     // 远平面（z=1）
+    
+    // 3. 转换到世界空间
+    glm::vec4 rayStart_world = invVP * rayStart_clip;
+    glm::vec4 rayEnd_world = invVP * rayEnd_clip;
+    
+    // 4. 透视除法
+    rayStart_world /= rayStart_world.w;
+    rayEnd_world /= rayEnd_world.w;
+    
+    // 5. 计算射线
+    glm::vec3 rayOrigin = glm::vec3(rayStart_world);
+    glm::vec3 rayDir = glm::normalize(glm::vec3(rayEnd_world - rayStart_world));
+    
+    // 6. 求射线与 z=planeZ 平面的交点
+    // 平面方程: z = planeZ
+    // 射线方程: P = rayOrigin + t * rayDir
+    // 解方程: rayOrigin.z + t * rayDir.z = planeZ
+    
+    if (std::abs(rayDir.z) < 1e-6f) {
+        // 射线与平面平行，直接投影到平面上
+        return glm::vec3(rayOrigin.x, rayOrigin.y, planeZ);
+    }
+    
+    float t = (planeZ - rayOrigin.z) / rayDir.z;
+    glm::vec3 intersection = rayOrigin + t * rayDir;
+    
+    return intersection;
+}
+
+// ============================================
+// 世界坐标转 NDC
+// ============================================
+glm::vec3 ViewportState::worldToNDC(const glm::vec3& worldPos) const
+{
+    // 1. 世界坐标 → 裁剪空间
+    glm::vec4 clipPos = proj * view * glm::vec4(worldPos, 1.0f);
+    
+    // 2. 透视除法 → NDC
+    if (std::abs(clipPos.w) < 1e-6f) {
+        return glm::vec3(0.0f, 0.0f, 0.0f);  // 无效坐标
+    }
+    
+    glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
+    
+    return ndc;
+}
+
+// ============================================
+// 判断点是否在视野内
+// ============================================
+bool ViewportState::isVisible(const glm::vec3& worldPos) const
+{
+    // 转换到 NDC
+    glm::vec3 ndc = worldToNDC(worldPos);
+    
+    // NDC 范围：[-1, 1]
+    // 检查是否在视锥体内
+    bool inX = (ndc.x >= -1.0f && ndc.x <= 1.0f);
+    bool inY = (ndc.y >= -1.0f && ndc.y <= 1.0f);
+    bool inZ = (ndc.z >= -1.0f && ndc.z <= 1.0f);
+    
+    return inX && inY && inZ;
+}
+
+// ============================================
+// 获取世界空间中某点的像素大小
+// ============================================
+float ViewportState::getPixelSizeAt(const glm::vec3& worldPos) const
+{
+    // 在世界空间中，计算相邻一个像素的距离
+    
+    // 1. 世界点转屏幕坐标
+    glm::vec2 screenPos = worldToScreen(worldPos);
+    
+    // 2. 屏幕坐标偏移 1 像素
+    glm::vec3 worldPos1 = screenToWorld((int)screenPos.x + 1, (int)screenPos.y, worldPos.z);
+    
+    // 3. 计算世界空间距离
+    float pixelSize = glm::distance(worldPos, worldPos1);
+    
+    return pixelSize;
+}
+
+// ============================================
+// 获取视锥体的 8 个角点
+// ============================================
+void ViewportState::getFrustumCorners(glm::vec3 corners[8]) const
+{
+    // NDC 空间的 8 个角点
+    // 近平面 (z = -1): 左下、右下、右上、左上
+    // 远平面 (z = 1):  左下、右下、右上、左上
+    
+    glm::vec3 ndcCorners[8] = {
+        // 近平面 (z = -1)
+        {-1.0f, -1.0f, -1.0f},  // 左下
+        { 1.0f, -1.0f, -1.0f},  // 右下
+        { 1.0f,  1.0f, -1.0f},  // 右上
+        {-1.0f,  1.0f, -1.0f},  // 左上
+        // 远平面 (z = 1)
+        {-1.0f, -1.0f,  1.0f},  // 左下
+        { 1.0f, -1.0f,  1.0f},  // 右下
+        { 1.0f,  1.0f,  1.0f},  // 右上
+        {-1.0f,  1.0f,  1.0f}   // 左上
+    };
+    
+    // 转换到世界空间
+    glm::mat4 invVP = glm::inverse(proj * view);
+    
+    for (int i = 0; i < 8; ++i) {
+        glm::vec4 worldCorner = invVP * glm::vec4(ndcCorners[i], 1.0f);
+        worldCorner /= worldCorner.w;  // 透视除法
+        corners[i] = glm::vec3(worldCorner);
+    }
+}
+
 void Renderer::syncFromDocument(const Document& doc, const ViewportState& vp, bool forceRebuild) {
     // 检查是否需要因缩放级别变化而重新细分圆弧
     bool needRetessellate = forceRebuild || 

@@ -60,6 +60,24 @@ void Document::clearAllDirtyFlags() {
     }
 }
 
+bool Document::updateEndLinePoint(EntityId id, glm::vec3 linepos)
+{
+    bool flag = false;
+    auto it = map_.find(id);
+    if (it == map_.end()) {
+        return flag;
+    }
+    if(it->second.type == EntityType::Line) { // 保持 ID 不变
+        // ✅ 推荐：检查类型后修改
+        if (auto* line = std::get_if<Line>(&it->second.geom)) {
+            line->p1 += linepos;
+        }
+        it->second.dirty = true;
+        flag = true;
+    }
+    return flag;
+}
+
 EntityId Document::addLine(const glm::vec3& a, const glm::vec3& b, const Style& s) {
     Entity e;
     e.type = EntityType::Line;

@@ -51,6 +51,9 @@ public:
     void markDirty(EntityId id);
     void clearAllDirtyFlags();
 
+    // 更新实体信息
+    bool updateEndLinePoint(EntityId id, glm::vec3 linepos);
+
     // 便捷构造（可选）
     EntityId addLine(const glm::vec3& a, const glm::vec3& b, const Style& s = {});
     EntityId addPolyline(const std::vector<glm::vec3>& pts, bool closed, const Style& s = {});

@@ -121,6 +121,8 @@ public:
     // 轨道相机参数设置
     void SetOrbitParams(float newRadius, float newYaw, float newPitch);
     
+    glm::vec3 screenToWorld(float deltaX, float deltaY, float worldPerPixel);
+
     // ============================================
     // 获取器
     // ============================================

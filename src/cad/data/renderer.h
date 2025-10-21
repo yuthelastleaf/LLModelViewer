@@ -13,6 +13,38 @@ struct ViewportState {
     
     // 计算 worldPerPixel（在视图矩阵更新时调用）
     void updateWorldPerPixel();
+
+    // ============================================
+    // 坐标转换方法
+    // ============================================
+    
+    // ✅ 屏幕坐标转世界坐标（在指定 Z 平面上）
+    glm::vec3 screenToWorld(int screenX, int screenY, float planeZ = 0.0f) const;
+    
+    // ✅ 重载：QPoint 版本
+    glm::vec3 screenToWorld(const QPoint& screenPos, float planeZ = 0.0f) const;
+    
+    // ✅ 世界坐标转屏幕坐标
+    glm::vec2 worldToScreen(const glm::vec3& worldPos) const;
+    
+    // ✅ NDC 转世界坐标
+    glm::vec3 ndcToWorld(float ndcX, float ndcY, float planeZ = 0.0f) const;
+    
+    // ✅ 世界坐标转 NDC
+    glm::vec3 worldToNDC(const glm::vec3& worldPos) const;
+    
+    // ============================================
+    // 工具方法
+    // ============================================
+    
+    // ✅ 判断世界坐标点是否在视野内
+    bool isVisible(const glm::vec3& worldPos) const;
+    
+    // ✅ 获取世界空间中某点对应的屏幕像素大小
+    float getPixelSizeAt(const glm::vec3& worldPos) const;
+    
+    // ✅ 获取视锥体的 8 个角点（世界坐标）
+    void getFrustumCorners(glm::vec3 corners[8]) const;
 };
 
 // 最小顶点结构（仅位置）

@@ -291,6 +291,13 @@ void Camera::SetOrbitParams(float newRadius, float newYaw, float newPitch) {
     }
 }
 
+// 计算平移偏移
+glm::vec3 Camera::screenToWorld(float deltaX, float deltaY, float worldPerPixel)
+{
+    return (-right * deltaX * worldPerPixel * panSensitivity
+                        + up * deltaY * worldPerPixel * panSensitivity);
+}
+
 void Camera::SetTopView(float distance) {
     view2DOrientation = View2DOrientation::RIGHT;
     SetType(CameraType::ORTHO_2D);
@@ -361,7 +368,7 @@ void Camera::updateOrbitPosition() {
     float y = radius * sin(glm::radians(pitch));
     float z = radius * cos(glm::radians(pitch)) * sin(glm::radians(yaw));
 
-    qDebug() << "radius: " << radius << "  yaw:" << yaw << "- x = " << x << " pitch:" << pitch << " - y=" << y << " z=" << z;
+    // qDebug() << "radius: " << radius << "  yaw:" << yaw << "- x = " << x << " pitch:" << pitch << " - y=" << y << " z=" << z;
 
     position = target + glm::vec3(x, y, z);
     front = glm::normalize(target - position);

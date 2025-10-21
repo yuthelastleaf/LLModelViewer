@@ -12,7 +12,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 CADDemo::CADDemo(QObject *parent)
-    : Demo(parent), document_(std::make_unique<Document>()), renderer_(std::make_unique<Renderer>()), gridRenderer_(std::make_unique<GridRenderer>()), axisRenderer_(std::make_unique<AxisRenderer>()), showGrid_(true), showAxis_(true), documentDirty_(true), isPanning_(false)
+    : Demo(parent), document_(std::make_unique<Document>()), renderer_(std::make_unique<Renderer>()), gridRenderer_(std::make_unique<GridRenderer>()), axisRenderer_(std::make_unique<AxisRenderer>()), showGrid_(true), showAxis_(true), documentDirty_(true), isPanning_(false), cad_mode_(DrawMode::SELECT), cur_draw_(0)
 {
     // ✅ 默认设置为 2D CAD 俯视图
     camera->SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
@@ -67,15 +67,19 @@ void CADDemo::render()
     if (showGrid_)
     {
         // 深色主题配色
-        std::uint32_t minorColor = 0x40404040;  // RGBA: (64, 64, 64, 64) - 深灰色，25%透明
-        std::uint32_t majorColor = 0x80808080;  // RGBA: (128, 128, 128, 128) - 灰色，50%透明
+        std::uint32_t minorColor = 0x40404040; // RGBA: (64, 64, 64, 64) - 深灰色，25%透明
+        std::uint32_t majorColor = 0x80808080; // RGBA: (128, 128, 128, 128) - 灰色，50%透明
         gridRenderer_->draw(*renderer_, viewportState_, minorColor, majorColor, 5);
     }
 
     // 绘制坐标轴
     if (showAxis_)
     {
-        axisRenderer_->draw(*renderer_, viewportState_, 100.0f);
+        bool drawZ = !camera->is2D();
+        axisRenderer_->draw(*renderer_, viewportState_, 100.0f, 0xFF0000FF, // X - 红色
+                            0x00FF00FF,                                     // Y - 绿色
+                            0x0000FFFF,                                     // Z - 蓝色
+                            drawZ);
     }
 
     // 绘制文档实体
@@ -111,28 +115,128 @@ void CADDemo::processKeyPress(CameraMovement qtKey, float deltaTime)
 
 void CADDemo::processMousePress(QPoint point)
 {
+    if (isPanning_)
+    {
+        return;
+    }
     isPanning_ = true;
+    switch (cad_mode_)
+    {
+    case DrawMode::SELECT:
+        break;
+
+    case DrawMode::LINE:
+    {
+        glm::vec3 startPoint = viewportState_.screenToWorld(point);
+
+        qDebug() << "=== LINE Mode - Mouse Press ===";
+        qDebug() << "World position:" << point.x() << point.y();
+        qDebug() << "Start point:" << startPoint.x << startPoint.y << startPoint.z;
+
+        cur_draw_ = document_->addLine(startPoint, startPoint,
+                                       Style::fromRGBA(0, 255, 0, 255));
+        qDebug() << "Created entity ID:" << cur_draw_;
+        // 验证实体是否成功创建
+        const Entity *entity = document_->get(cur_draw_);
+        if (entity)
+        {
+            qDebug() << "Entity created successfully!";
+            // qDebug() << "  Type:" << (int)entity->type;
+            qDebug() << "  Visible:" << entity->visible;
+
+            if (auto *line = std::get_if<Line>(&entity->geom))
+            {
+                qDebug() << "  Line p0:" << line->p0.x << line->p0.y << line->p0.z;
+                qDebug() << "  Line p1:" << line->p1.x << line->p1.y << line->p1.z;
+            }
+        }
+        else
+        {
+            qDebug() << "❌ Entity creation failed!";
+        }
+
+        emit documentChanged();
+        qDebug() << "=== End LINE Mode ===\n";
+        break;
+    }
+
+    case DrawMode::CIRCLE:
+        emit statusMessage("Circle tool selected - Click to set center");
+        qDebug() << "Switched to: Circle";
+        break;
+
+    case DrawMode::RECT:
+        emit statusMessage("Rectangle tool selected - Click to set first corner");
+        qDebug() << "Switched to: Rectangle";
+        break;
+    }
 }
 
 void CADDemo::processMouseMove(QPoint pos)
 {
     if (!isPanning_)
+    {
         return;
-
-    if (camera->is2D())
-    {
-        // ✅ 2D 模式：平移
-        camera->pan2D((float)pos.x(), (float)pos.y(), viewportState_.worldPerPixel);
-    }
-    else
-    {
-        // ✅ 3D 模式：旋转
-        float xOffset = pos.x() * 0.5f;
-        float yOffset = -pos.y() * 0.5f;
-        camera->processMouseMovement(xOffset, yOffset);
     }
 
-    emit parameterChanged();
+    switch (cad_mode_)
+    {
+    case DrawMode::SELECT:
+        if (camera->is2D())
+        {
+            // ✅ 2D 模式：平移
+            camera->pan2D((float)pos.x(), (float)pos.y(), viewportState_.worldPerPixel);
+        }
+        else
+        {
+            // ✅ 3D 模式：旋转
+            float xOffset = pos.x() * 0.5f;
+            float yOffset = -pos.y() * 0.5f;
+            camera->processMouseMovement(xOffset, yOffset);
+        }
+        emit parameterChanged();
+        break;
+
+    case DrawMode::LINE:
+        if (camera->is2D())
+        {
+            const Entity *cur = document_->get(cur_draw_);
+            glm::vec3 linepos = viewportState_.screenToWorld(pos);
+            document_->updateEndLinePoint(cur_draw_, linepos);
+            qDebug() << "linepos :" << pos.x() << " " << pos.y() << " " << linepos.z;
+
+            // const Entity *entity = document_->get(cur_draw_);
+            // if (entity)
+            // {
+            //     qDebug() << "Entity created successfully!";
+            //     // qDebug() << "  Type:" << (int)entity->type;
+            //     qDebug() << "  Visible:" << entity->visible;
+
+            //     if (auto *line = std::get_if<Line>(&entity->geom))
+            //     {
+            //         qDebug() << "  Line p0:" << line->p0.x << line->p0.y << line->p0.z;
+            //         qDebug() << "  Line p1:" << line->p1.x << line->p1.y << line->p1.z;
+            //     }
+            // }
+            // else
+            // {
+            //     qDebug() << "❌ Entity creation failed!";
+            // }
+
+            emit documentChanged();
+        }
+        break;
+
+    case DrawMode::CIRCLE:
+        emit statusMessage("Circle tool selected - Click to set center");
+        qDebug() << "Switched to: Circle";
+        break;
+
+    case DrawMode::RECT:
+        emit statusMessage("Rectangle tool selected - Click to set first corner");
+        qDebug() << "Switched to: Rectangle";
+        break;
+    }
 }
 
 void CADDemo::processMouseRelease()
@@ -282,6 +386,34 @@ void CADDemo::clearDocument()
     emit statusMessage("Document cleared");
 }
 
+void CADDemo::onDrawModeChanged(int id)
+{
+    cad_mode_ = static_cast<DrawMode>(id);
+
+    switch (cad_mode_)
+    {
+    case DrawMode::SELECT:
+        emit statusMessage("Selection tool active");
+        qDebug() << "Switched to: Select";
+        break;
+
+    case DrawMode::LINE:
+        emit statusMessage("Line tool selected - Click to set start point");
+        qDebug() << "Switched to: Line";
+        break;
+
+    case DrawMode::CIRCLE:
+        emit statusMessage("Circle tool selected - Click to set center");
+        qDebug() << "Switched to: Circle";
+        break;
+
+    case DrawMode::RECT:
+        emit statusMessage("Rectangle tool selected - Click to set first corner");
+        qDebug() << "Switched to: Rectangle";
+        break;
+    }
+}
+
 // ============================================
 // 辅助函数
 // ============================================
@@ -346,6 +478,21 @@ QWidget *CADDemo::createCADControls(QWidget *parent)
     QPushButton *topBtn = new QPushButton("Top View (XY)");
     QPushButton *frontBtn = new QPushButton("Front View (XZ)");
     QPushButton *rightBtn = new QPushButton("Right View (YZ)");
+
+    QGroupBox *drawGroup = new QGroupBox("Draw Type");
+    QVBoxLayout *drawLayout = new QVBoxLayout(drawGroup);
+    QButtonGroup *drawModeGroup = new QButtonGroup(drawLayout);
+    drawModeGroup->setExclusive(true);
+
+    QRadioButton *drawSelect = new QRadioButton("Select");
+    drawSelect->setChecked(true);
+    drawModeGroup->addButton(drawSelect, (int)DrawMode::SELECT);
+    QRadioButton *drawLine = new QRadioButton("Line");
+    drawModeGroup->addButton(drawLine, (int)DrawMode::LINE);
+    drawLayout->addWidget(drawSelect);
+    drawLayout->addWidget(drawLine);
+    layout->addWidget(drawGroup);
+    connect(drawModeGroup, QOverload<int>::of(&QButtonGroup::idClicked), this, &CADDemo::onDrawModeChanged);
 
     connect(topBtn, &QPushButton::clicked, [this]()
             { setViewOrientation((int)View2DOrientation::TOP); });

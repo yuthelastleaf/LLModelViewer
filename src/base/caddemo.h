@@ -74,6 +74,10 @@ public slots:
     void addTestEntities();
     void clearDocument();
 
+    // 绘制模式切换
+    void onDrawModeChanged(int id);
+    
+
 signals:
     void documentChanged();
     void selectionChanged();
@@ -89,6 +93,15 @@ private:
     QWidget* createCADControls(QWidget *parent = nullptr);
     QWidget* createDocumentControls(QWidget *parent = nullptr);
 
+    // 绘图状态
+    enum class DrawMode {
+        SELECT = 0,
+        LINE = 1,
+        CIRCLE = 2,
+        RECT = 3
+    };
+
+private:
     // ============================================
     // 核心组件
     // ============================================
@@ -97,7 +110,9 @@ private:
     std::unique_ptr<Renderer> renderer_;
     std::unique_ptr<GridRenderer> gridRenderer_;
     std::unique_ptr<AxisRenderer> axisRenderer_;
-    
+
+    EntityId cur_draw_;
+    DrawMode cad_mode_;
     // 视口状态
     ViewportState viewportState_;
     
