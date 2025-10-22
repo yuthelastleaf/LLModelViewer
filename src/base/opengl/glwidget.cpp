@@ -508,6 +508,7 @@ void GLWidget::paintGL()
     }
 
     if (currentDemo) {
+        // 键盘输入（保持不变）
         if (input->isKeyDown(Qt::Key_W)) currentDemo->processKeyPress(CameraMovement::FORWARD,  deltaTime);
         if (input->isKeyDown(Qt::Key_S)) currentDemo->processKeyPress(CameraMovement::BACKWARD, deltaTime);
         if (input->isKeyDown(Qt::Key_A)) currentDemo->processKeyPress(CameraMovement::LEFT,     deltaTime);
@@ -516,16 +517,39 @@ void GLWidget::paintGL()
         if (input->isKeyDown(Qt::Key_Q)) currentDemo->processKeyPress(CameraMovement::DOWN,     deltaTime);
         if (input->isKeyDown(Qt::Key_R)) currentDemo->processKeyPress(CameraMovement::RESET,    deltaTime);
 
-        if(input->isMouseDown(Qt::LeftButton)) {
-            currentDemo->processMousePress(input->mousePosition().toPoint());
-            currentDemo->processMouseMove(input->mouseDeltaPixels().toPoint());
+        // ✅ 鼠标输入（新逻辑）
+        if (input->isMouseDown(Qt::LeftButton)) {
+
+            ViewportState& vs = currentDemo->getViewportState();
+
+            // 1. 获取屏幕坐标
+            QPoint currScreenPos = input->mousePosition().toPoint();
+            QPoint prevScreenPos = input->prevMousePosition().toPoint() - input->mouseDeltaPixels().toPoint();
+            QPoint screenDelta = input->mouseDeltaPixels().toPoint();
+            
+            // 2. 转换为世界坐标
+            glm::vec3 currWorldPos = vs.screenToWorld(currScreenPos, 0);
+            glm::vec3 prevWorldPos = vs.screenToWorld(prevScreenPos, 0);
+            glm::vec3 worldDelta = currWorldPos - prevWorldPos;
+            
+            currentDemo->processMousePress(currScreenPos, currWorldPos);
+            
+            // 4. 鼠标移动事件（每帧调用，只要按钮按下）
+            if (screenDelta.x() != 0 || screenDelta.y() != 0) {
+                currentDemo->processMouseMove(
+                    currScreenPos, screenDelta,
+                    currWorldPos, worldDelta
+                );
+            }
         } else {
             currentDemo->processMouseRelease();
         }
 
-        currentDemo->processMouseWheel(input->wheelDeltaY());
-
-        
+        // 滚轮输入（保持不变）
+        int wheelDelta = input->wheelDeltaY();
+        if (wheelDelta != 0) {
+            currentDemo->processMouseWheel(wheelDelta);
+        }
     }
     
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

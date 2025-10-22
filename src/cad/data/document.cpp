@@ -112,3 +112,14 @@ EntityId Document::addArc(const glm::vec3& c, float r, float a0, float a1, const
     e.geom = Arc{c, r, a0, a1};
     return add(std::move(e));
 }
+
+EntityId Document::addBox(const glm::vec3 &center, float size, const Style &s)
+{
+    if (size <= 0.0f) return 0;  // 边界检查
+    
+    Entity e;
+    e.type = EntityType::Box;
+    e.style = s;
+    e.geom = Box{center, size};
+    return add(std::move(e));
+}

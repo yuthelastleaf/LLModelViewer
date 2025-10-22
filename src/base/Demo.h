@@ -9,13 +9,11 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include "input/inputmanager.h"
 #include "camera/Camera.h"
+#include "../cad/data/renderer.h"
 
 // 前向声明
 class Camera;
 class LightManager;
-class QKeyEvent;
-class QMouseEvent;
-class QWheelEvent;
 class QWidget;
 
 /**
@@ -82,12 +80,12 @@ public:
     /**
      * 处理鼠标按下
      */
-    virtual void processMousePress(QPoint point);
+    virtual void processMousePress(QPoint point, glm::vec3 wpoint);
     
     /**
      * 处理鼠标移动
      */
-    virtual void processMouseMove(QPoint pos);
+    virtual void processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoint, glm::vec3 delta_wpoint);
     
     /**
      * 处理鼠标释放
@@ -116,6 +114,10 @@ public:
     
     int getViewportWidth() const { return viewportWidth; }
     int getViewportHeight() const { return viewportHeight; }
+    
+    // ✅ 新增：获取视口状态（用于坐标转换）
+    ViewportState& getViewportState() { return viewportState_; }
+    const ViewportState& getViewportState() const { return viewportState_; }
 
     // ============================================
     // 控制面板创建 - 子类可重写以添加自定义控件
@@ -156,6 +158,13 @@ protected:
      * 获取 MVP 矩阵
      */
     glm::mat4 getMVPMatrix(const glm::mat4 &model) const;
+    
+    // ✅ 新增：更新视口状态（子类可重写以自定义投影/视图矩阵）
+    /**
+     * 更新视口状态（在窗口大小改变或相机参数改变时调用）
+     * 子类可重写此方法以自定义投影矩阵和视图矩阵
+     */
+    virtual void updateViewportState();
 
     // ============================================
     // 通用控制面板组件创建
@@ -181,6 +190,9 @@ protected:
     // 窗口尺寸（用于投影矩阵）
     int viewportWidth;
     int viewportHeight;
+    
+    // ✅ 视口状态（用于屏幕坐标转换）
+    ViewportState viewportState_;
 };
 
 #endif // DEMO_H

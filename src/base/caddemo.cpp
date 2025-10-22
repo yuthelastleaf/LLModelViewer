@@ -27,6 +27,16 @@ CADDemo::CADDemo(QObject *parent)
     // 初始化视口状态
     viewportState_.width = viewportWidth;
     viewportState_.height = viewportHeight;
+
+    // 默认 XY 平面
+    workPlane_->setXY();
+
+    // 启用跟随模式
+    WorkPlane::FollowMode mode;
+    mode.enabled = true;
+    mode.followPosition = true;    // 原点跟随相机目标
+    mode.followOrientation = true; // 法向量垂直于视线
+    workPlane_->setFollowMode(mode);
 }
 
 CADDemo::~CADDemo()
@@ -62,6 +72,12 @@ void CADDemo::update(float deltaTime)
 void CADDemo::render()
 {
     updateViewportState();
+
+    if (documentDirty_ || renderer_)
+    {
+        renderer_->syncFromDocument(*document_, viewportState_, false);
+        documentDirty_ = false;
+    }
 
     // 绘制网格
     if (showGrid_)
@@ -113,7 +129,7 @@ void CADDemo::processKeyPress(CameraMovement qtKey, float deltaTime)
     }
 }
 
-void CADDemo::processMousePress(QPoint point)
+void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
 {
     if (isPanning_)
     {
@@ -127,13 +143,11 @@ void CADDemo::processMousePress(QPoint point)
 
     case DrawMode::LINE:
     {
-        glm::vec3 startPoint = viewportState_.screenToWorld(point);
-
         qDebug() << "=== LINE Mode - Mouse Press ===";
         qDebug() << "World position:" << point.x() << point.y();
-        qDebug() << "Start point:" << startPoint.x << startPoint.y << startPoint.z;
+        qDebug() << "Start point:" << wpoint.x << wpoint.y << wpoint.z;
 
-        cur_draw_ = document_->addLine(startPoint, startPoint,
+        cur_draw_ = document_->addLine(wpoint, wpoint,
                                        Style::fromRGBA(0, 255, 0, 255));
         qDebug() << "Created entity ID:" << cur_draw_;
         // 验证实体是否成功创建
@@ -169,10 +183,35 @@ void CADDemo::processMousePress(QPoint point)
         emit statusMessage("Rectangle tool selected - Click to set first corner");
         qDebug() << "Switched to: Rectangle";
         break;
+    case DrawMode::BOX:
+    {
+        glm::vec3 centerPos;
+
+        if (camera->is2D())
+        {
+            break;
+        }
+
+        Style boxStyle = Style::fromRGBA(100, 149, 237, 255);
+        EntityId boxId = document_->addBox(centerPos, 1.0f, boxStyle);
+
+        if (boxId != 0)
+        {
+            renderer_->syncFromDocument(*document_, viewportState_, false);
+            documentDirty_ = true;
+
+            emit statusMessage(QString("Box created at (%.2f, %.2f, %.2f)")
+                                   .arg(centerPos.x)
+                                   .arg(centerPos.y)
+                                   .arg(centerPos.z));
+            emit documentChanged();
+        }
+    }
+    break;
     }
 }
 
-void CADDemo::processMouseMove(QPoint pos)
+void CADDemo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoint, glm::vec3 delta_wpoint)
 {
     if (!isPanning_)
     {
@@ -185,13 +224,13 @@ void CADDemo::processMouseMove(QPoint pos)
         if (camera->is2D())
         {
             // ✅ 2D 模式：平移
-            camera->pan2D((float)pos.x(), (float)pos.y(), viewportState_.worldPerPixel);
+            camera->pan2D((float)delta_point.x(), (float)delta_point.y(), viewportState_.worldPerPixel);
         }
         else
         {
             // ✅ 3D 模式：旋转
-            float xOffset = pos.x() * 0.5f;
-            float yOffset = -pos.y() * 0.5f;
+            float xOffset = delta_point.x() * 0.5f;
+            float yOffset = -delta_point.y() * 0.5f;
             camera->processMouseMovement(xOffset, yOffset);
         }
         emit parameterChanged();
@@ -200,28 +239,8 @@ void CADDemo::processMouseMove(QPoint pos)
     case DrawMode::LINE:
         if (camera->is2D())
         {
-            const Entity *cur = document_->get(cur_draw_);
-            glm::vec3 linepos = viewportState_.screenToWorld(pos);
-            document_->updateEndLinePoint(cur_draw_, linepos);
-            qDebug() << "linepos :" << pos.x() << " " << pos.y() << " " << linepos.z;
-
-            // const Entity *entity = document_->get(cur_draw_);
-            // if (entity)
-            // {
-            //     qDebug() << "Entity created successfully!";
-            //     // qDebug() << "  Type:" << (int)entity->type;
-            //     qDebug() << "  Visible:" << entity->visible;
-
-            //     if (auto *line = std::get_if<Line>(&entity->geom))
-            //     {
-            //         qDebug() << "  Line p0:" << line->p0.x << line->p0.y << line->p0.z;
-            //         qDebug() << "  Line p1:" << line->p1.x << line->p1.y << line->p1.z;
-            //     }
-            // }
-            // else
-            // {
-            //     qDebug() << "❌ Entity creation failed!";
-            // }
+            document_->updateEndLinePoint(cur_draw_, delta_wpoint);
+            // qDebug() << "linepos :" << delta_wpoint.x << " " << delta_wpoint.y << " " << delta_wpoint.z;
 
             emit documentChanged();
         }
@@ -241,6 +260,7 @@ void CADDemo::processMouseMove(QPoint pos)
 
 void CADDemo::processMouseRelease()
 {
+    qDebug() << "processMouseRelease called";
     isPanning_ = false;
 }
 
@@ -259,11 +279,6 @@ void CADDemo::processMouseWheel(int offset)
 void CADDemo::resizeViewport(int width, int height)
 {
     Demo::resizeViewport(width, height);
-
-    viewportState_.width = width;
-    viewportState_.height = height;
-    viewportState_.updateWorldPerPixel();
-
     documentDirty_ = true;
 }
 
@@ -418,13 +433,20 @@ void CADDemo::onDrawModeChanged(int id)
 // 辅助函数
 // ============================================
 
+// ✅ 重写基类的 updateViewportState
 void CADDemo::updateViewportState()
 {
-    viewportState_.width = viewportWidth;
-    viewportState_.height = viewportHeight;
-    viewportState_.view = getViewMatrix();
-    viewportState_.proj = getProjectionMatrix();
-    viewportState_.updateWorldPerPixel();
+    // 先调用基类实现更新基本信息
+    Demo::updateViewportState();
+
+    // ✅ 更新工作平面跟随
+    if (workPlane_ && workPlane_->getFollowMode().enabled)
+    {
+        workPlane_->updateFollow(
+            camera->getPosition(),
+            camera->getFront(),
+            camera->getTarget());
+    }
 }
 
 void CADDemo::syncRendererFromDocument()
@@ -489,8 +511,11 @@ QWidget *CADDemo::createCADControls(QWidget *parent)
     drawModeGroup->addButton(drawSelect, (int)DrawMode::SELECT);
     QRadioButton *drawLine = new QRadioButton("Line");
     drawModeGroup->addButton(drawLine, (int)DrawMode::LINE);
+    QRadioButton *drawBox = new QRadioButton("Box");
+    drawModeGroup->addButton(drawLine, (int)DrawMode::BOX);
     drawLayout->addWidget(drawSelect);
     drawLayout->addWidget(drawLine);
+    drawLayout->addWidget(drawBox);
     layout->addWidget(drawGroup);
     connect(drawModeGroup, QOverload<int>::of(&QButtonGroup::idClicked), this, &CADDemo::onDrawModeChanged);
 
@@ -569,4 +594,53 @@ QWidget *CADDemo::createDocumentControls(QWidget *parent)
     layout->addWidget(clearBtn);
 
     return group;
+}
+
+// ============================================
+// Slots 实现
+// ============================================
+
+void CADDemo::setWorkPlaneXY()
+{
+    workPlane_->setXY();
+    emit statusMessage("Work plane: XY (Top)");
+}
+
+void CADDemo::setWorkPlaneXZ()
+{
+    workPlane_->setXZ();
+    emit statusMessage("Work plane: XZ (Front)");
+}
+
+void CADDemo::setWorkPlaneYZ()
+{
+    workPlane_->setYZ();
+    emit statusMessage("Work plane: YZ (Side)");
+}
+
+void CADDemo::setWorkPlaneFromView()
+{
+    workPlane_->setFromView(
+        camera->getPosition(),
+        camera->getFront(),
+        camera->getTarget());
+    emit statusMessage("Work plane: View Plane");
+}
+
+void CADDemo::toggleWorkPlaneFollow(bool enable)
+{
+    WorkPlane::FollowMode mode = workPlane_->getFollowMode();
+    mode.enabled = enable;
+    mode.followPosition = enable;
+    mode.followOrientation = enable;
+    workPlane_->setFollowMode(mode);
+
+    emit statusMessage(enable ? "Work plane following view"
+                              : "Work plane fixed");
+}
+
+void CADDemo::offsetWorkPlane(float distance)
+{
+    workPlane_->moveAlongNormal(distance);
+    emit statusMessage(QString("Work plane offset: %1").arg(distance));
 }

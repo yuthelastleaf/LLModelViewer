@@ -1,8 +1,5 @@
 #include "Demo.h"
 #include "light/LightManager.h"
-#include <QKeyEvent>
-#include <QMouseEvent>
-#include <QWheelEvent>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -30,6 +27,9 @@ Demo::Demo(QObject *parent)
     dirLight->ambient = glm::vec3(0.2f);
     dirLight->diffuse = glm::vec3(0.5f);
     dirLight->specular = glm::vec3(1.0f);
+    
+    // ✅ 初始化视口状态
+    updateViewportState();
 }
 
 Demo::~Demo()
@@ -51,9 +51,11 @@ void Demo::processKeyPress(CameraMovement qtKey, float deltaTime)
         case CameraMovement::UP:
         case CameraMovement::DOWN:
             camera->processKeyboard(qtKey, deltaTime);
+            updateViewportState(); // ✅ 相机移动后更新视口状态
             break;
         case CameraMovement::RESET:
             camera->reset();
+            updateViewportState(); // ✅ 相机重置后更新视口状态
             emit statusMessage("Camera reset");
             emit parameterChanged();
             break;
@@ -62,28 +64,30 @@ void Demo::processKeyPress(CameraMovement qtKey, float deltaTime)
     }
 }
 
-void Demo::processMousePress(QPoint point)
+void Demo::processMousePress(QPoint point, glm::vec3 wpoint)
 {
-
+    // 默认实现为空
 }
 
-void Demo::processMouseMove(QPoint pos)
+void Demo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoint, glm::vec3 delta_wpoint)
 {
-    float xOffset = pos.x() * 0.1f;
-    float yOffset = -pos.y() * 0.1f; // 反转 Y 轴
+    float xOffset = delta_point.x() * 0.1f;
+    float yOffset = -delta_point.y() * 0.1f; // 反转 Y 轴
     camera->processMouseMovement(xOffset, yOffset);
+    updateViewportState(); // ✅ 相机旋转后更新视口状态
     emit parameterChanged();
 }
 
 void Demo::processMouseRelease()
 {
-    
+    // 默认实现为空
 }
 
 void Demo::processMouseWheel(int offset)
 {
     float yOffset = (float)offset / 120.0f;
     camera->processMouseScroll(yOffset);
+    updateViewportState(); // ✅ 缩放后更新视口状态
     emit parameterChanged();
 }
 
@@ -91,6 +95,7 @@ void Demo::resizeViewport(int width, int height)
 {
     viewportWidth = width;
     viewportHeight = height;
+    updateViewportState(); // ✅ 窗口大小改变时更新视口状态
 }
 
 // ============================================
@@ -118,6 +123,16 @@ glm::mat4 Demo::getProjectionMatrix() const
 glm::mat4 Demo::getMVPMatrix(const glm::mat4 &model) const
 {
     return getProjectionMatrix() * getViewMatrix() * model;
+}
+
+// ✅ 新增：更新视口状态
+void Demo::updateViewportState()
+{
+    viewportState_.width = viewportWidth;
+    viewportState_.height = viewportHeight;
+    viewportState_.proj = getProjectionMatrix();
+    viewportState_.view = getViewMatrix();
+    viewportState_.updateWorldPerPixel();
 }
 
 // ============================================
@@ -155,6 +170,7 @@ QWidget* Demo::createCameraControls(QWidget *parent)
     connect(typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, typeCombo](int index) {
         CameraType type = static_cast<CameraType>(typeCombo->currentData().toInt());
         camera->SetType(type);
+        updateViewportState(); // ✅ 相机类型改变后更新视口状态
         emit statusMessage(QString("Camera type changed to: %1").arg(typeCombo->currentText()));
         emit parameterChanged();
     });
@@ -171,6 +187,7 @@ QWidget* Demo::createCameraControls(QWidget *parent)
     connect(fovSlider, &QSlider::valueChanged, [this, fovLabel](int value) {
         camera->fov = static_cast<float>(value);
         fovLabel->setText(QString::number(value));
+        updateViewportState(); // ✅ FOV 改变后更新视口状态
         emit parameterChanged();
     });
     fovLayout->addWidget(fovSlider);
@@ -194,6 +211,7 @@ QWidget* Demo::createCameraControls(QWidget *parent)
     QPushButton *resetBtn = new QPushButton("Reset Camera");
     connect(resetBtn, &QPushButton::clicked, [this]() {
         camera->reset();
+        updateViewportState(); // ✅ 相机重置后更新视口状态
         emit statusMessage("Camera reset");
         emit parameterChanged();
     });
@@ -252,8 +270,9 @@ QWidget* Demo::createLightControls(QWidget *parent)
             
             QCheckBox *enableCheckBox = new QCheckBox(lightName);
             enableCheckBox->setChecked(light->enabled);
-            connect(enableCheckBox, &QCheckBox::toggled, [light](bool checked) {
+            connect(enableCheckBox, &QCheckBox::toggled, [light, this](bool checked) {
                 light->enabled = checked;
+                emit parameterChanged();
             });
             layout->addWidget(enableCheckBox);
         }

@@ -5,6 +5,7 @@
 #include "../cad/data/document.h"
 #include "../cad/data/renderer.h"
 #include "../cad/data/GridAxisHelper.h"
+#include "util/WorkPlane.h"
 #include <memory>
 
 /**
@@ -37,8 +38,8 @@ public:
     // ============================================
     
     void processKeyPress(CameraMovement qtKey, float deltaTime) override;
-    void processMousePress(QPoint point) override;
-    void processMouseMove(QPoint pos) override;
+    void processMousePress(QPoint point, glm::vec3 wpoint) override;
+    void processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoint, glm::vec3 delta_wpoint) override;
     void processMouseRelease() override;
     void processMouseWheel(int offset) override;
     void resizeViewport(int width, int height) override;
@@ -65,7 +66,7 @@ public slots:
     void setAxisVisible(bool visible);
     void resetView();
     
-    // ✅ 2D/3D 模式切换
+    // 2D/3D 模式切换
     void switch2DMode(bool enable);
     void setViewOrientation(int orientation);  // 0=Top, 1=Front, 2=Right
     void setIsometricView();
@@ -76,18 +77,28 @@ public slots:
 
     // 绘制模式切换
     void onDrawModeChanged(int id);
-    
+
+    // 工作平面控制
+    void setWorkPlaneXY();
+    void setWorkPlaneXZ();
+    void setWorkPlaneYZ();
+    void setWorkPlaneFromView();
+    void toggleWorkPlaneFollow(bool enable);
+    void offsetWorkPlane(float distance);
 
 signals:
     void documentChanged();
     void selectionChanged();
+
+protected:
+    // ✅ 重写基类方法以支持 2D/3D 模式切换
+    void updateViewportState() override;
 
 private:
     // ============================================
     // 辅助函数
     // ============================================
     
-    void updateViewportState();
     void syncRendererFromDocument();
     
     QWidget* createCADControls(QWidget *parent = nullptr);
@@ -98,7 +109,8 @@ private:
         SELECT = 0,
         LINE = 1,
         CIRCLE = 2,
-        RECT = 3
+        RECT = 3,
+        BOX
     };
 
 private:
@@ -113,8 +125,8 @@ private:
 
     EntityId cur_draw_;
     DrawMode cad_mode_;
-    // 视口状态
-    ViewportState viewportState_;
+    
+    // ❌ 删除重复声明：viewportState_ 已在基类中
     
     // 显示选项
     bool showGrid_;
@@ -123,6 +135,8 @@ private:
     
     // 鼠标交互
     bool isPanning_;
+
+    std::unique_ptr<WorkPlane> workPlane_;
 };
 
 #endif // CADDEMO_H

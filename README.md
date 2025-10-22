@@ -86,7 +86,7 @@ cmake编译的时候，glad库什么的找不到，有时候就是cmakelists中�
 开发规划：
 MVP 里程碑：
 
-v0.1 Viewer：加载 Document，渲染实体；平移/缩放、网格显示、坐标轴。
+v0.1 Viewer：加载 Document，渲染实体；平移/缩放、网格显示、坐标轴。✅
 v0.2 选择 & 框选：Pick、SelectionManager、选中高亮。
 v0.3 变换 Gizmo：移动工具（单轴/任意）、命令栈 Undo/Redo。
 v0.4 绘制工具：Line/Polyline/Circle；捕捉（网格/端点/中点）；预览几何。

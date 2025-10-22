@@ -7,7 +7,7 @@
 
 using EntityId = std::uint64_t;
 
-enum class EntityType { Line, Polyline, Circle, Arc };
+enum class EntityType { Line, Polyline, Circle, Arc, Box };
 
 struct Style {
     std::uint32_t rgba = 0xFFFFFFFF; // RGBA 格式: 0xRRGGBBAA
@@ -24,12 +24,20 @@ struct Line      { glm::vec3 p0, p1; };
 struct Polyline  { std::vector<glm::vec3> pts; bool closed = false; };
 struct Circle    { glm::vec3 c; float r; };
 struct Arc       { glm::vec3 c; float r; float a0, a1; /* 弧度 */ };
+// ✅ 新增：立方体实体（正六面体）
+struct Box {
+    glm::vec3 center;      // 中心点
+    float size;            // 边长（正六面体所以只需要一个尺寸）
+    // 可选：支持旋转（后续扩展）
+    glm::vec3 rotation = glm::vec3(0.0f);  // 欧拉角
+};
+
 
 struct Entity {
     EntityId id{};
     EntityType type{};
     Style style{};
-    std::variant<Line, Polyline, Circle, Arc> geom;
+    std::variant<Line, Polyline, Circle, Arc, Box> geom;
     bool visible = true;
     bool dirty = true;  // 标记是否需要重新上传到 GPU
 };
@@ -59,6 +67,7 @@ public:
     EntityId addPolyline(const std::vector<glm::vec3>& pts, bool closed, const Style& s = {});
     EntityId addCircle(const glm::vec3& c, float r, const Style& s = {});
     EntityId addArc(const glm::vec3& c, float r, float a0, float a1, const Style& s = {});
+    EntityId addBox(const glm::vec3& center, float size, const Style& s = {});
 
 private:
     std::unordered_map<EntityId, Entity> map_;
