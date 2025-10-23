@@ -28,15 +28,19 @@ CADDemo::CADDemo(QObject *parent)
     viewportState_.width = viewportWidth;
     viewportState_.height = viewportHeight;
 
-    // 默认 XY 平面
-    workPlane_->setXY();
+    workPlane_ = std::make_unique<WorkPlane>();
+    if (workPlane_)
+    {
+        // 默认 XY 平面
+        workPlane_->setXY();
 
-    // 启用跟随模式
-    WorkPlane::FollowMode mode;
-    mode.enabled = true;
-    mode.followPosition = true;    // 原点跟随相机目标
-    mode.followOrientation = true; // 法向量垂直于视线
-    workPlane_->setFollowMode(mode);
+        // 启用跟随模式
+        WorkPlane::FollowMode mode;
+        mode.enabled = true;
+        mode.followPosition = true;    // 原点跟随相机目标
+        mode.followOrientation = true; // 法向量垂直于视线
+        workPlane_->setFollowMode(mode);
+    }
 }
 
 CADDemo::~CADDemo()
@@ -185,7 +189,6 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
         break;
     case DrawMode::BOX:
     {
-        glm::vec3 centerPos;
 
         if (camera->is2D())
         {
@@ -193,19 +196,26 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
         }
 
         Style boxStyle = Style::fromRGBA(100, 149, 237, 255);
-        EntityId boxId = document_->addBox(centerPos, 1.0f, boxStyle);
-
-        if (boxId != 0)
+        // ✅ 生成射线：只传递矩阵，不依赖 Camera 类
+        Ray ray = Ray::fromScreen(
+            point.x(), point.y(),
+            viewportWidth, viewportHeight,
+            camera->getViewMatrix(),
+            camera->getProjectionMatrix(
+                static_cast<float>(viewportWidth) / viewportHeight));
+        glm::vec3 centerPos;
+        // ✅ 与工作平面求交：只传递平面参数，不依赖 WorkPlane 类
+        if (!ray.intersectPlane(
+                workPlane_->getOrigin(),
+                workPlane_->getNormal(),
+                centerPos))
         {
-            renderer_->syncFromDocument(*document_, viewportState_, false);
-            documentDirty_ = true;
-
-            emit statusMessage(QString("Box created at (%.2f, %.2f, %.2f)")
-                                   .arg(centerPos.x)
-                                   .arg(centerPos.y)
-                                   .arg(centerPos.z));
-            emit documentChanged();
+            emit statusMessage("Cannot project to work plane");
+            break;
         }
+        EntityId boxId = document_->addBox(centerPos, 1.0f, boxStyle);
+        qDebug() << "box point: " << centerPos.x << " " << centerPos.y << " " << centerPos.z;
+        emit documentChanged();
     }
     break;
     }
@@ -260,7 +270,6 @@ void CADDemo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoin
 
 void CADDemo::processMouseRelease()
 {
-    qDebug() << "processMouseRelease called";
     isPanning_ = false;
 }
 
@@ -512,7 +521,7 @@ QWidget *CADDemo::createCADControls(QWidget *parent)
     QRadioButton *drawLine = new QRadioButton("Line");
     drawModeGroup->addButton(drawLine, (int)DrawMode::LINE);
     QRadioButton *drawBox = new QRadioButton("Box");
-    drawModeGroup->addButton(drawLine, (int)DrawMode::BOX);
+    drawModeGroup->addButton(drawBox, (int)DrawMode::BOX);
     drawLayout->addWidget(drawSelect);
     drawLayout->addWidget(drawLine);
     drawLayout->addWidget(drawBox);

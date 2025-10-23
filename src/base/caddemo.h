@@ -5,6 +5,7 @@
 #include "../cad/data/document.h"
 #include "../cad/data/renderer.h"
 #include "../cad/data/GridAxisHelper.h"
+#include "util/RayUtils.h"
 #include "util/WorkPlane.h"
 #include <memory>
 

@@ -170,6 +170,10 @@ set(UTILITY_SOURCES
     src/base/light/LightManager.cpp
     src/base/util/shader.h
     src/base/util/shader.cpp
+    src/base/util/WorkPlane.h
+    src/base/util/WorkPlane.cpp
+    src/base/util/RayUtils.h
+    src/base/util/RayUtils.cpp
 )
 
 # UI 控件

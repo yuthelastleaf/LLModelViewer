@@ -1,8 +1,11 @@
 #pragma once
 #include <unordered_map>
 #include <vector>
+#include <memory>
 #include <QOpenGLFunctions_3_3_Core>
-#include <QOpenGLShaderProgram>
+#include <QPoint>
+#include "../../base/util/shader.h"
+
 #include <glm/glm.hpp>
 #include "document.h"
 
@@ -55,8 +58,7 @@ struct GpuBatch {
     GLuint vao = 0, vbo = 0, ibo = 0;
     GLsizei indexCount = 0;
     std::uint32_t rgba = 0xFFFFFFFF;
-    GLenum drawMode = GL_LINES;  // GL_LINES 或 GL_LINE_STRIP
-    // v0.1: lineWidth 先忽略（保持 1px）
+    GLenum drawMode = GL_LINES;  // GL_LINES, GL_LINE_STRIP, GL_TRIANGLES
 };
 
 class Renderer : protected QOpenGLFunctions_3_3_Core {
@@ -85,6 +87,7 @@ private:
     void uploadPolyline_(EntityId id, const Polyline& P, std::uint32_t rgba);
     void uploadCircle_(EntityId id, const Circle& C, std::uint32_t rgba, const ViewportState& vp);
     void uploadArc_(EntityId id, const Arc& A, std::uint32_t rgba, const ViewportState& vp);
+    void uploadBox_(EntityId id, const Box& B, std::uint32_t rgba);
 
     // 折线细分：保证屏幕误差 ~ 0.5 像素
     static std::vector<glm::vec3> tessellateCircle(const Circle& C, float worldEps);
@@ -95,8 +98,9 @@ private:
     void freeBatch_(GpuBatch& b);
 
 private:
-    QOpenGLShaderProgram progLines_;
-    GLint uMVP_ = -1, uColor_ = -1;
+    
+    // ✅ 使用自定义 Shader
+    std::unique_ptr<Shader> shaderLines_;
 
     // 每实体一个批（v0.1 简单实现；后续可合批）
     std::unordered_map<EntityId, GpuBatch> batches_;

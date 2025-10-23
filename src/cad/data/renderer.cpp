@@ -1,38 +1,44 @@
 #include "renderer.h"
 #include <cmath>
 
-// ========== 最小着色器（位置+统一颜色） ==========
-static const char* kVS = R"(#version 330 core
-layout(location=0) in vec3 aPos;
-uniform mat4 uMVP;
-void main(){ gl_Position = uMVP * vec4(aPos,1.0); }
-)";
-static const char* kFS = R"(#version 330 core
-uniform vec4 uColor;
-out vec4 FragColor;
-void main(){ FragColor = uColor; }
-)";
-
 bool Renderer::initialize() {
-    // 初始化 OpenGL 函数
-    if (!initializeOpenGLFunctions()) {
+    initializeOpenGLFunctions();
+    
+    try {
+        // ✅ 使用自定义 Shader 类
+        shaderLines_ = std::make_unique<Shader>(
+            "shaders/cadshaders/line/line.vs",
+            "shaders/cadshaders/line/line.fs"
+        );
+        
+        if (!shaderLines_ || shaderLines_->ID == 0) {
+            qCritical() << "Failed to create shader program";
+            return false;
+        }
+        
+        qDebug() << "Renderer initialized successfully with custom Shader";
+        qDebug() << "Shader ID:" << shaderLines_->ID;
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        qCritical() << "Failed to initialize renderer:" << e.what();
         return false;
     }
-    
-    if (!progLines_.addShaderFromSourceCode(QOpenGLShader::Vertex, kVS)) return false;
-    if (!progLines_.addShaderFromSourceCode(QOpenGLShader::Fragment, kFS)) return false;
-    if (!progLines_.link()) return false;
-    uMVP_   = progLines_.uniformLocation("uMVP");
-    uColor_ = progLines_.uniformLocation("uColor");
-    return true;
 }
 
 void Renderer::shutdown() {
-    for (auto& kv : batches_) freeBatch_(kv.second);
+    // 清理所有批次
+    for (auto& kv : batches_) {
+        freeBatch_(kv.second);
+    }
     batches_.clear();
-    progLines_.removeAllShaders();
+    
+    // ✅ Shader 通过 unique_ptr 自动清理
+    shaderLines_.reset();
+    
+    qDebug() << "Renderer shutdown complete";
 }
-
 GLuint Renderer::makeVao(GLuint vbo, GLuint ibo) {
     GLuint vao=0;
     glGenVertexArrays(1, &vao);
@@ -297,6 +303,9 @@ void Renderer::syncFromDocument(const Document& doc, const ViewportState& vp, bo
             case EntityType::Arc: {
                 uploadArc_(e->id, std::get<Arc>(e->geom), e->style.rgba, vp);
             } break;
+            case EntityType::Box: {
+                uploadBox_(e->id, std::get<Box>(e->geom), e->style.rgba);
+            } break;
         }
     }
 }
@@ -310,78 +319,135 @@ void Renderer::removeBatch(EntityId id) {
 }
 
 void Renderer::draw(const ViewportState& vp) {
-    progLines_.bind();
-    glm::mat4 mvp = vp.proj * vp.view; // v0.1 不用 model
-    progLines_.setUniformValue(uMVP_, QMatrix4x4(&mvp[0][0]).transposed()); // 注意 Qt 行列主序
-    glLineWidth(1.0f); // Core Profile 下通常只支持 1
-
-    for (auto& kv : batches_) {
-        auto& b = kv.second;
-        glm::vec4 c = rgbaToVec4(b.rgba);
-        progLines_.setUniformValue(uColor_, QVector4D(c.r, c.g, c.b, c.a));
-        glBindVertexArray(b.vao);
-        
-        if (b.drawMode == GL_LINES) {
-            glDrawArrays(GL_LINES, 0, b.indexCount);
-        } else { // GL_LINE_STRIP
-            glDrawArrays(GL_LINE_STRIP, 0, b.indexCount);
-        }
+    if (!shaderLines_) {
+        qWarning() << "Shader not initialized";
+        return;
     }
-    glBindVertexArray(0);
-    progLines_.release();
+    
+    // ✅ 激活着色器
+    shaderLines_->use();
+    
+    // ✅ 计算并设置 MVP 矩阵（所有实体共享）
+    glm::mat4 model(1.0f);  // 单位矩阵，暂不支持实体级变换
+    glm::mat4 mvp = vp.proj * vp.view * model;
+    shaderLines_->setMat4("mvp", mvp);
+    
+    // 绘制所有批次
+    for (const auto& kv : batches_) {
+        const GpuBatch& batch = kv.second;
+        
+        if (batch.indexCount == 0 || batch.vao == 0) {
+            continue;
+        }
+        
+        // ✅ 设置颜色（从 uint32_t RGBA 转换为 vec4）
+        float r = ((batch.rgba >> 24) & 0xFF) / 255.0f;
+        float g = ((batch.rgba >> 16) & 0xFF) / 255.0f;
+        float b = ((batch.rgba >>  8) & 0xFF) / 255.0f;
+        float a = ((batch.rgba      ) & 0xFF) / 255.0f;
+        
+        shaderLines_->setVec4("color", glm::vec4(r, g, b, a));
+        
+        // 绘制
+        glBindVertexArray(batch.vao);
+        glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(0);
+    }
 }
 
-void Renderer::drawLineStrip(const std::vector<glm::vec3>& pts, std::uint32_t rgba, const ViewportState& vp) {
-    if (pts.size() < 2) return;
-
-    // 临时上传（小批用于网格/轴）
-    GLuint vbo=0, vao=0;
+void Renderer::drawLineStrip(const std::vector<glm::vec3>& pts, 
+                             std::uint32_t rgba, 
+                             const ViewportState& vp) {
+    if (pts.empty() || !shaderLines_) {
+        return;
+    }
+    
+    // 转换顶点
+    std::vector<PosVertex> vertices;
+    vertices.reserve(pts.size());
+    for (const auto& p : pts) {
+        vertices.push_back({p});
+    }
+    
+    // 创建临时 VAO/VBO
+    GLuint vao, vbo;
+    glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    std::vector<PosVertex> vb(pts.size());
-    for (size_t i=0;i<pts.size();++i) vb[i].pos = pts[i];
-    glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(vb.size()*sizeof(PosVertex)), vb.data(), GL_STREAM_DRAW);
-    vao = makeVao(vbo, 0);
-
-    progLines_.bind();
-    glm::mat4 mvp = vp.proj * vp.view;
-    progLines_.setUniformValue(uMVP_, QMatrix4x4(&mvp[0][0]).transposed());
-    glm::vec4 c = rgbaToVec4(rgba);
-    progLines_.setUniformValue(uColor_, QVector4D(c.r, c.g, c.b, c.a));
-
+    
     glBindVertexArray(vao);
-    glDrawArrays(GL_LINE_STRIP, 0, GLsizei(pts.size()));
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, 
+                 vertices.size() * sizeof(PosVertex),
+                 vertices.data(), GL_STREAM_DRAW);
+    
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(PosVertex), (void*)0);
+    glEnableVertexAttribArray(0);
+    
+    // ✅ 使用着色器绘制
+    shaderLines_->use();
+    
+    glm::mat4 model(1.0f);
+    glm::mat4 mvp = vp.proj * vp.view * model;
+    shaderLines_->setMat4("mvp", mvp);
+    
+    float r = ((rgba >> 24) & 0xFF) / 255.0f;
+    float g = ((rgba >> 16) & 0xFF) / 255.0f;
+    float b = ((rgba >>  8) & 0xFF) / 255.0f;
+    float a = ((rgba      ) & 0xFF) / 255.0f;
+    shaderLines_->setVec4("color", glm::vec4(r, g, b, a));
+    
+    glDrawArrays(GL_LINE_STRIP, 0, static_cast<GLsizei>(vertices.size()));
+    
+    // 清理
     glBindVertexArray(0);
-    progLines_.release();
-
-    glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
+    glDeleteVertexArrays(1, &vao);
 }
 
-void Renderer::drawLineSegments(const std::vector<glm::vec3>& ptsPairs, std::uint32_t rgba, const ViewportState& vp) {
-    if (ptsPairs.size() < 2) return;
-    // 期望偶数个点，成对构成线段
-    GLuint vbo=0, vao=0;
+void Renderer::drawLineSegments(const std::vector<glm::vec3>& ptsPairs, 
+                                std::uint32_t rgba, 
+                                const ViewportState& vp) {
+    if (ptsPairs.empty() || !shaderLines_) {
+        return;
+    }
+    
+    std::vector<PosVertex> vertices;
+    vertices.reserve(ptsPairs.size());
+    for (const auto& p : ptsPairs) {
+        vertices.push_back({p});
+    }
+    
+    GLuint vao, vbo;
+    glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    std::vector<PosVertex> vb(ptsPairs.size());
-    for (size_t i=0;i<ptsPairs.size();++i) vb[i].pos = ptsPairs[i];
-    glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(vb.size()*sizeof(PosVertex)), vb.data(), GL_STREAM_DRAW);
-    vao = makeVao(vbo, 0);
-
-    progLines_.bind();
-    glm::mat4 mvp = vp.proj * vp.view;
-    progLines_.setUniformValue(uMVP_, QMatrix4x4(&mvp[0][0]).transposed());
-    glm::vec4 c = rgbaToVec4(rgba);
-    progLines_.setUniformValue(uColor_, QVector4D(c.r, c.g, c.b, c.a));
-
+    
     glBindVertexArray(vao);
-    glDrawArrays(GL_LINES, 0, GLsizei(ptsPairs.size()));
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, 
+                 vertices.size() * sizeof(PosVertex),
+                 vertices.data(), GL_STREAM_DRAW);
+    
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(PosVertex), (void*)0);
+    glEnableVertexAttribArray(0);
+    
+    // ✅ 使用着色器绘制
+    shaderLines_->use();
+    
+    glm::mat4 model(1.0f);
+    glm::mat4 mvp = vp.proj * vp.view * model;
+    shaderLines_->setMat4("mvp", mvp);
+    
+    float r = ((rgba >> 24) & 0xFF) / 255.0f;
+    float g = ((rgba >> 16) & 0xFF) / 255.0f;
+    float b = ((rgba >>  8) & 0xFF) / 255.0f;
+    float a = ((rgba      ) & 0xFF) / 255.0f;
+    shaderLines_->setVec4("color", glm::vec4(r, g, b, a));
+    
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertices.size()));
+    
     glBindVertexArray(0);
-    progLines_.release();
-
-    glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
+    glDeleteVertexArrays(1, &vao);
 }
 
 // ========== 上传实体 ==========
@@ -427,6 +493,71 @@ void Renderer::uploadArc_(EntityId id, const Arc& A, std::uint32_t rgba, const V
     auto pts = tessellateArc(A, worldEps);
     Polyline P{pts, false};
     uploadPolyline_(id, P, rgba);
+}
+
+void Renderer::uploadBox_(EntityId id, const Box& B, std::uint32_t rgba) {
+    // ✅ 修改为实心立方体（可选）
+    float half = B.size * 0.5f;
+    glm::vec3 c = B.center;
+    
+    // 8 个顶点
+    glm::vec3 v[8] = {
+        c + glm::vec3(-half, -half, -half),  // 0
+        c + glm::vec3( half, -half, -half),  // 1
+        c + glm::vec3( half,  half, -half),  // 2
+        c + glm::vec3(-half,  half, -half),  // 3
+        c + glm::vec3(-half, -half,  half),  // 4
+        c + glm::vec3( half, -half,  half),  // 5
+        c + glm::vec3( half,  half,  half),  // 6
+        c + glm::vec3(-half,  half,  half),  // 7
+    };
+    
+    std::vector<PosVertex> vertices;
+    std::vector<GLuint> indices;
+    
+    // ✅ 实心模式：6 个面，12 个三角形
+    for (int i = 0; i < 8; ++i) {
+        vertices.push_back({v[i]});
+    }
+    
+    indices = {
+        // 后面 (-Z)
+        0, 1, 2,  2, 3, 0,
+        // 前面 (+Z)
+        4, 6, 5,  4, 7, 6,
+        // 左面 (-X)
+        0, 3, 7,  0, 7, 4,
+        // 右面 (+X)
+        1, 5, 6,  1, 6, 2,
+        // 底面 (-Y)
+        0, 4, 5,  0, 5, 1,
+        // 顶面 (+Y)
+        3, 2, 6,  3, 6, 7
+    };
+    
+    // 上传到 GPU
+    removeBatch(id);
+    
+    GpuBatch batch;
+    glGenBuffers(1, &batch.vbo);
+    glGenBuffers(1, &batch.ibo);
+    
+    glBindBuffer(GL_ARRAY_BUFFER, batch.vbo);
+    glBufferData(GL_ARRAY_BUFFER, 
+                 vertices.size() * sizeof(PosVertex),
+                 vertices.data(), GL_STATIC_DRAW);
+    
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, batch.ibo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                 indices.size() * sizeof(GLuint),
+                 indices.data(), GL_STATIC_DRAW);
+    
+    batch.vao = makeVao(batch.vbo, batch.ibo);
+    batch.indexCount = static_cast<GLsizei>(indices.size());
+    batch.rgba = rgba;
+    batch.drawMode = GL_TRIANGLES;  // ✅ 实心模式
+    
+    batches_[id] = batch;
 }
 
 // ========== 细分：保证弧边弦高误差约 <= worldEps ==========

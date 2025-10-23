@@ -226,8 +226,6 @@ bool WorkPlane::isVertical() const {
 // ============================================
 
 void WorkPlane::updateAxes() {
-    // 根据法向量构建正交坐标系
-    
     // 选择一个不平行于 normal 的向量作为参考
     glm::vec3 reference;
     if (std::abs(normal_.z) < 0.9f) {
