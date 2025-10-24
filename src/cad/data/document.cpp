@@ -70,7 +70,7 @@ bool Document::updateEndLinePoint(EntityId id, glm::vec3 linepos)
     if(it->second.type == EntityType::Line) { // 保持 ID 不变
         // ✅ 推荐：检查类型后修改
         if (auto* line = std::get_if<Line>(&it->second.geom)) {
-            line->p1 += linepos;
+            line->p1 = linepos;
         }
         it->second.dirty = true;
         flag = true;

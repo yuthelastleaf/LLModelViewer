@@ -249,7 +249,7 @@ void CADDemo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoin
     case DrawMode::LINE:
         if (camera->is2D())
         {
-            document_->updateEndLinePoint(cur_draw_, delta_wpoint);
+            document_->updateEndLinePoint(cur_draw_, wpoint);
             // qDebug() << "linepos :" << delta_wpoint.x << " " << delta_wpoint.y << " " << delta_wpoint.z;
 
             emit documentChanged();
