@@ -40,6 +40,10 @@ struct Entity {
     std::variant<Line, Polyline, Circle, Arc, Box> geom;
     bool visible = true;
     bool dirty = true;  // 标记是否需要重新上传到 GPU
+
+    // ✅ v0.2: 选择状态
+    bool selected = false;     // 是否被选中
+    bool hovered = false;      // 是否被鼠标悬停（可选）
 };
 
 class Document {

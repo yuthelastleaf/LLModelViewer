@@ -59,6 +59,8 @@ struct GpuBatch {
     GLsizei indexCount = 0;
     std::uint32_t rgba = 0xFFFFFFFF;
     GLenum drawMode = GL_LINES;  // GL_LINES, GL_LINE_STRIP, GL_TRIANGLES
+    // ✅ v0.2: 选择状态
+    bool selected = false;    // 是否被选中
 };
 
 class Renderer : protected QOpenGLFunctions_3_3_Core {
@@ -80,6 +82,13 @@ public:
     // 低阶画线（供网格/坐标轴等临时使用）
     void drawLineStrip(const std::vector<glm::vec3>& pts, std::uint32_t rgba, const ViewportState& vp);
     void drawLineSegments(const std::vector<glm::vec3>& ptsPairs, std::uint32_t rgba, const ViewportState& vp);
+
+    // ✅ v0.2: 高亮颜色设置
+    void setSelectionColor(std::uint32_t rgba) { selectionColor_ = rgba; }
+    std::uint32_t getSelectionColor() const { return selectionColor_; }
+    
+    void setSelectionWidth(float width) { selectionWidth_ = width; }
+    float getSelectionWidth() const { return selectionWidth_; }
 
 private:
     // 上传 helpers
@@ -107,4 +116,8 @@ private:
     
     // 缓存上次细分时的 worldPerPixel，用于判断是否需要重新细分
     float lastWorldPerPixel_ = -1.0f;
+
+    // ✅ v0.2: 高亮渲染参数
+    std::uint32_t selectionColor_ = 0xFF9900FF;  // 橙色
+    float selectionWidth_ = 2.0f;                 // 线宽（未来支持）
 };

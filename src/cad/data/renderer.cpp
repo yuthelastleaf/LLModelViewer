@@ -299,6 +299,12 @@ void Renderer::syncFromDocument(const Document &doc, const ViewportState &vp, bo
             continue;
         }
 
+        // ✅ v0.2: 更新选择状态
+        auto it = batches_.find(e->id);
+        if (it != batches_.end()) {
+            it->second.selected = e->selected;
+        }
+
         // 只处理脏实体或需要重新细分的圆弧
         bool needUpdate = e->dirty;
         if (!needUpdate && needRetessellate)
@@ -347,6 +353,13 @@ void Renderer::syncFromDocument(const Document &doc, const ViewportState &vp, bo
         }
         break;
         }
+
+        // ✅ 更新选择状态
+        it = batches_.find(e->id);
+        if (it != batches_.end()) {
+            it->second.selected = e->selected;
+        }
+
     }
 }
 
@@ -396,6 +409,11 @@ void Renderer::draw(const ViewportState &vp)
             continue;
         }
 
+        // ✅ 跳过选中的实体
+        if (batch.selected) {
+            continue;
+        }
+
         // 设置颜色
         float r = ((batch.rgba >> 24) & 0xFF) / 255.0f;
         float g = ((batch.rgba >> 16) & 0xFF) / 255.0f;
@@ -422,6 +440,39 @@ void Renderer::draw(const ViewportState &vp)
         }
         glBindVertexArray(0);
     }
+
+    // 第二遍：绘制选中的实体（高亮）
+    for (const auto& kv : batches_) {
+        const GpuBatch& batch = kv.second;
+        
+        if (batch.indexCount == 0 || batch.vao == 0) {
+            continue;
+        }
+        
+        // ✅ 只绘制选中的实体
+        if (!batch.selected) {
+            continue;
+        }
+        
+        // ✅ 使用高亮颜色
+        float r = ((selectionColor_ >> 24) & 0xFF) / 255.0f;
+        float g = ((selectionColor_ >> 16) & 0xFF) / 255.0f;
+        float b = ((selectionColor_ >>  8) & 0xFF) / 255.0f;
+        float a = ((selectionColor_      ) & 0xFF) / 255.0f;
+        
+        shaderLines_->setVec4("color", glm::vec4(r, g, b, a));
+        
+        // ✅ 可选：增加线宽（需要 OpenGL 支持）
+        // glLineWidth(selectionWidth_);
+        
+        glBindVertexArray(batch.vao);
+        glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(0);
+        
+        // 恢复线宽
+        // glLineWidth(1.0f);
+    }
+
 }
 
 void Renderer::drawLineStrip(const std::vector<glm::vec3> &pts,

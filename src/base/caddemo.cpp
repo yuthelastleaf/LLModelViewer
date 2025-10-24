@@ -41,6 +41,12 @@ CADDemo::CADDemo(QObject *parent)
         mode.followOrientation = true; // 法向量垂直于视线
         workPlane_->setFollowMode(mode);
     }
+
+    // ✅ 连接选择信号
+    connect(selectionManager_.get(), &SelectionManager::selectionChanged,
+            this, [this](int count) {
+                emit statusMessage(QString("Selected: %1 entities").arg(count));
+            });
 }
 
 CADDemo::~CADDemo()

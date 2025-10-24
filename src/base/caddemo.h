@@ -5,6 +5,8 @@
 #include "../cad/data/document.h"
 #include "../cad/data/renderer.h"
 #include "../cad/data/GridAxisHelper.h"
+#include "../cad/selection/Picker.h"
+#include "../cad/selection/SelectionManager.h"
 #include "util/RayUtils.h"
 #include "util/WorkPlane.h"
 #include <memory>
@@ -87,6 +89,12 @@ public slots:
     void toggleWorkPlaneFollow(bool enable);
     void offsetWorkPlane(float distance);
 
+    // ✅ v0.2: 选择操作
+    void clearSelection();
+    void selectAll();
+    void invertSelection();
+    void deleteSelected();
+
 signals:
     void documentChanged();
     void selectionChanged();
@@ -138,6 +146,10 @@ private:
     bool isPanning_;
 
     std::unique_ptr<WorkPlane> workPlane_;
+
+    // ✅ v0.2: 选择系统
+    std::unique_ptr<SelectionManager> selectionManager_;
+    std::unique_ptr<Picker> picker_;
 };
 
 #endif // CADDEMO_H
