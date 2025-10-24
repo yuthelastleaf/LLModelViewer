@@ -4,9 +4,12 @@ cmake_minimum_required(VERSION 3.16)
 # ⚠️ CRITICAL: 这些变量必须在这里设置
 # 不能在 if() 条件中设置，必须直接设置
 # ============================================
-
+set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
+set(CMAKE_C_FLAGS_DEBUG "-g -O0")
 # 强制设置 vcpkg triplet（必须在 project() 之前）
 set(VCPKG_TARGET_TRIPLET "x64-mingw-static" CACHE STRING "vcpkg triplet" FORCE)
+
 
 # 强制设置 toolchain file（必须在 project() 之前）
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)

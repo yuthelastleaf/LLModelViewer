@@ -320,7 +320,10 @@ void CADDemo::resetView()
 void CADDemo::switch2DMode(bool enable)
 {
     camera->set2DMode(enable);
-
+    if (enable)
+    {
+        camera->SetTopView();
+    }
     viewportState_.updateWorldPerPixel();
     documentDirty_ = true;
 
