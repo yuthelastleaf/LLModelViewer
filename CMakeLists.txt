@@ -157,6 +157,10 @@ set(CAD_BASE_SOURCES
     src/cad/data/renderer.cpp
     src/cad/data/GridAxisHelper.h
     src/cad/data/GridAxisHelper.cpp
+    src/cad/selection/Picker.cpp
+    src/cad/selection/Picker.h
+    src/cad/selection/SelectionManager.cpp
+    src/cad/selection/SelectionManager.h
 )
 
 # 具体 Demo 实现

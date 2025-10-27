@@ -101,7 +101,92 @@ public:
         const ViewportState& vp,
         BoxSelectMode mode = BoxSelectMode::INTERSECT) const;
 
+    // ============================================
+    // ✅ v0.2: 2D 拾取（正交视图）
+    // ============================================
+    
+    /**
+     * 2D 模式下的拾取（直接使用屏幕/世界坐标）
+     * @param worldPos 世界坐标点击位置
+     * @param document 文档
+     * @param vp 视口状态
+     * @param pixelThreshold 拾取阈值（像素单位）
+     * @return 拾取结果
+     */
+    std::optional<PickResult> pick2D(
+        const glm::vec3& worldPos,
+        const Document& document,
+        const ViewportState& vp,
+        float pixelThreshold = 5.0f) const;
+    
+    /**
+     * 2D 模式下拾取所有实体
+     */
+    std::vector<PickResult> pickAll2D(
+        const glm::vec3& worldPos,
+        const Document& document,
+        const ViewportState& vp,
+        float pixelThreshold = 5.0f) const;
+
 private:
+
+    // ============================================
+    // 2D 实体距离计算
+    // ============================================
+    
+    // 点到线段的距离
+    float distanceToLine2D(
+        const glm::vec3& point,
+        const Line& line,
+        const ViewportState& vp,
+        glm::vec3* closestPoint = nullptr) const;
+    
+    // 点到折线的距离
+    float distanceToPolyline2D(
+        const glm::vec3& point,
+        const Polyline& polyline,
+        const ViewportState& vp,
+        glm::vec3* closestPoint = nullptr) const;
+    
+    // 点到圆的距离
+    float distanceToCircle2D(
+        const glm::vec3& point,
+        const Circle& circle,
+        const ViewportState& vp,
+        glm::vec3* closestPoint = nullptr) const;
+    
+    // 点到圆弧的距离
+    float distanceToArc2D(
+        const glm::vec3& point,
+        const Arc& arc,
+        const ViewportState& vp,
+        glm::vec3* closestPoint = nullptr) const;
+    
+    // 点到立方体的距离
+    float distanceToBox2D(
+        const glm::vec3& point,
+        const Box& box,
+        const ViewportState& vp,
+        glm::vec3* closestPoint = nullptr) const;
+    
+    // ============================================
+    // 2D 几何辅助方法
+    // ============================================
+    
+    // 点到线段的最短距离（2D）
+    static float pointToSegmentDistance(
+        const glm::vec2& p,
+        const glm::vec2& a,
+        const glm::vec2& b,
+        glm::vec2* closestPoint = nullptr);
+    
+    // 世界坐标转屏幕像素距离
+    float worldToPixelDistance(
+        float worldDist,
+        const ViewportState& vp) const {
+        return worldDist / vp.worldPerPixel;
+    }
+
     // ============================================
     // 实体求交方法
     // ============================================

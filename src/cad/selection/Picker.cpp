@@ -334,3 +334,368 @@ bool Picker::isLineIntersectScreenRect(
     return !(lineMaxX < minX || lineMinX > maxX ||
              lineMaxY < minY || lineMinY > maxY);
 }
+
+// ============================================
+// 2D 拾取实现
+// ============================================
+
+std::optional<Picker::PickResult> Picker::pick2D(
+    const glm::vec3& worldPos,
+    const Document& document,
+    const ViewportState& vp,
+    float pixelThreshold) const {
+    
+    std::vector<PickResult> results = pickAll2D(worldPos, document, vp, pixelThreshold);
+    
+    if (results.empty()) {
+        return std::nullopt;
+    }
+    
+    // 返回距离最近的
+    return results.front();
+}
+
+std::vector<Picker::PickResult> Picker::pickAll2D(
+    const glm::vec3& worldPos,
+    const Document& document,
+    const ViewportState& vp,
+    float pixelThreshold) const {
+    
+    std::vector<PickResult> results;
+    
+    // 将像素阈值转换为世界单位
+    float worldThreshold = pixelThreshold * vp.worldPerPixel;
+    
+    for (const auto* entity : document.all()) {
+        if (!entity) continue;
+        
+        glm::vec3 closestPoint;
+        float distance = std::numeric_limits<float>::max();
+        
+        switch (entity->type) {
+            case EntityType::Line: {
+                if (auto* line = std::get_if<Line>(&entity->geom)) {
+                    distance = distanceToLine2D(worldPos, *line, vp, &closestPoint);
+                }
+                break;
+            }
+            
+            case EntityType::Polyline: {
+                if (auto* polyline = std::get_if<Polyline>(&entity->geom)) {
+                    distance = distanceToPolyline2D(worldPos, *polyline, vp, &closestPoint);
+                }
+                break;
+            }
+            
+            case EntityType::Circle: {
+                if (auto* circle = std::get_if<Circle>(&entity->geom)) {
+                    distance = distanceToCircle2D(worldPos, *circle, vp, &closestPoint);
+                }
+                break;
+            }
+            
+            case EntityType::Arc: {
+                if (auto* arc = std::get_if<Arc>(&entity->geom)) {
+                    distance = distanceToArc2D(worldPos, *arc, vp, &closestPoint);
+                }
+                break;
+            }
+            
+            case EntityType::Box: {
+                if (auto* box = std::get_if<Box>(&entity->geom)) {
+                    distance = distanceToBox2D(worldPos, *box, vp, &closestPoint);
+                }
+                break;
+            }
+        }
+        
+        // 检查是否在阈值内
+        if (distance <= worldThreshold) {
+            results.push_back({entity->id, closestPoint, distance});
+        }
+    }
+    
+    // 按距离排序
+    std::sort(results.begin(), results.end());
+    
+    return results;
+}
+
+// ============================================
+// 2D 距离计算实现
+// ============================================
+
+float Picker::distanceToLine2D(
+    const glm::vec3& point,
+    const Line& line,
+    const ViewportState& vp,
+    glm::vec3* closestPoint) const {
+    
+    // 将 3D 点投影到屏幕坐标
+    glm::vec2 p = vp.worldToScreen(point);
+    glm::vec2 a = vp.worldToScreen(line.p0);
+    glm::vec2 b = vp.worldToScreen(line.p1);
+    
+    glm::vec2 closest2D;
+    float pixelDist = pointToSegmentDistance(p, a, b, &closest2D);
+    
+    if (closestPoint) {
+        // 将屏幕坐标转回世界坐标
+        *closestPoint = vp.screenToWorld(
+            static_cast<int>(closest2D.x),
+            static_cast<int>(closest2D.y),
+            point.z  // 保持相同的 Z 平面
+        );
+    }
+    
+    // 转换为世界单位距离
+    return pixelDist * vp.worldPerPixel;
+}
+
+float Picker::distanceToPolyline2D(
+    const glm::vec3& point,
+    const Polyline& polyline,
+    const ViewportState& vp,
+    glm::vec3* closestPoint) const {
+    
+    if (polyline.pts.size() < 2) {
+        return std::numeric_limits<float>::max();
+    }
+    
+    glm::vec2 p = vp.worldToScreen(point);
+    
+    float minDist = std::numeric_limits<float>::max();
+    glm::vec2 closestPt2D;
+    
+    // 检查所有线段
+    for (size_t i = 0; i < polyline.pts.size() - 1; ++i) {
+        glm::vec2 a = vp.worldToScreen(polyline.pts[i]);
+        glm::vec2 b = vp.worldToScreen(polyline.pts[i + 1]);
+        
+        glm::vec2 tempClosest;
+        float dist = pointToSegmentDistance(p, a, b, &tempClosest);
+        
+        if (dist < minDist) {
+            minDist = dist;
+            closestPt2D = tempClosest;
+        }
+    }
+    
+    if (closestPoint) {
+        *closestPoint = vp.screenToWorld(
+            static_cast<int>(closestPt2D.x),
+            static_cast<int>(closestPt2D.y),
+            point.z
+        );
+    }
+    
+    return minDist * vp.worldPerPixel;
+}
+
+float Picker::distanceToCircle2D(
+    const glm::vec3& point,
+    const Circle& circle,
+    const ViewportState& vp,
+    glm::vec3* closestPoint) const {
+    
+    // 屏幕空间计算
+    glm::vec2 p = vp.worldToScreen(point);
+    glm::vec2 center = vp.worldToScreen(circle.c);
+    
+    // 圆在屏幕上的半径（像素）
+    float radiusPixel = circle.r / vp.worldPerPixel;
+    
+    // 点到圆心的距离
+    float distToCenter = glm::distance(p, center);
+    
+    // 点到圆周的距离
+    float distToCircle = std::abs(distToCenter - radiusPixel);
+    
+    if (closestPoint) {
+        // 计算圆周上最近的点
+        glm::vec2 direction = glm::normalize(p - center);
+        glm::vec2 closest2D = center + direction * radiusPixel;
+        
+        *closestPoint = vp.screenToWorld(
+            static_cast<int>(closest2D.x),
+            static_cast<int>(closest2D.y),
+            circle.c.z
+        );
+    }
+    
+    return distToCircle * vp.worldPerPixel;
+}
+
+float Picker::distanceToArc2D(
+    const glm::vec3& point,
+    const Arc& arc,
+    const ViewportState& vp,
+    glm::vec3* closestPoint) const {
+    
+    // 屏幕空间计算
+    glm::vec2 p = vp.worldToScreen(point);
+    glm::vec2 center = vp.worldToScreen(arc.c);
+    
+    float radiusPixel = arc.r / vp.worldPerPixel;
+    
+    // 计算点相对于圆心的角度
+    glm::vec2 toPoint = p - center;
+    float angle = std::atan2(toPoint.y, toPoint.x);
+    
+    // 归一化到 [0, 2π]
+    if (angle < 0) angle += 2.0f * glm::pi<float>();
+    
+    // 检查角度是否在圆弧范围内
+    float a0 = arc.a0;
+    float a1 = arc.a1;
+    
+    // 处理跨越 0 度的情况
+    bool inArc = false;
+    if (a0 <= a1) {
+        inArc = (angle >= a0 && angle <= a1);
+    } else {
+        inArc = (angle >= a0 || angle <= a1);
+    }
+    
+    if (inArc) {
+        // 在圆弧范围内，计算到圆弧的距离
+        float distToCenter = glm::distance(p, center);
+        float distToArc = std::abs(distToCenter - radiusPixel);
+        
+        if (closestPoint) {
+            glm::vec2 direction = glm::normalize(toPoint);
+            glm::vec2 closest2D = center + direction * radiusPixel;
+            *closestPoint = vp.screenToWorld(
+                static_cast<int>(closest2D.x),
+                static_cast<int>(closest2D.y),
+                arc.c.z
+            );
+        }
+        
+        return distToArc * vp.worldPerPixel;
+    } else {
+        // 不在圆弧范围内，计算到两个端点的距离
+        glm::vec2 p0(center.x + radiusPixel * std::cos(a0),
+                     center.y + radiusPixel * std::sin(a0));
+        glm::vec2 p1(center.x + radiusPixel * std::cos(a1),
+                     center.y + radiusPixel * std::sin(a1));
+        
+        float dist0 = glm::distance(p, p0);
+        float dist1 = glm::distance(p, p1);
+        
+        if (dist0 < dist1) {
+            if (closestPoint) {
+                *closestPoint = vp.screenToWorld(
+                    static_cast<int>(p0.x),
+                    static_cast<int>(p0.y),
+                    arc.c.z
+                );
+            }
+            return dist0 * vp.worldPerPixel;
+        } else {
+            if (closestPoint) {
+                *closestPoint = vp.screenToWorld(
+                    static_cast<int>(p1.x),
+                    static_cast<int>(p1.y),
+                    arc.c.z
+                );
+            }
+            return dist1 * vp.worldPerPixel;
+        }
+    }
+}
+
+float Picker::distanceToBox2D(
+    const glm::vec3& point,
+    const Box& box,
+    const ViewportState& vp,
+    glm::vec3* closestPoint) const {
+    
+    // 立方体的 8 个顶点
+    float half = box.size * 0.5f;
+    glm::vec3 c = box.center;
+    
+    glm::vec3 vertices[8] = {
+        c + glm::vec3(-half, -half, -half),
+        c + glm::vec3( half, -half, -half),
+        c + glm::vec3( half,  half, -half),
+        c + glm::vec3(-half,  half, -half),
+        c + glm::vec3(-half, -half,  half),
+        c + glm::vec3( half, -half,  half),
+        c + glm::vec3( half,  half,  half),
+        c + glm::vec3(-half,  half,  half),
+    };
+    
+    // 立方体的 12 条边
+    int edges[12][2] = {
+        {0, 1}, {1, 2}, {2, 3}, {3, 0},  // 后面
+        {4, 5}, {5, 6}, {6, 7}, {7, 4},  // 前面
+        {0, 4}, {1, 5}, {2, 6}, {3, 7}   // 连接线
+    };
+    
+    glm::vec2 p = vp.worldToScreen(point);
+    
+    float minDist = std::numeric_limits<float>::max();
+    glm::vec2 closestPt2D;
+    
+    // 检查所有边
+    for (int i = 0; i < 12; ++i) {
+        glm::vec2 a = vp.worldToScreen(vertices[edges[i][0]]);
+        glm::vec2 b = vp.worldToScreen(vertices[edges[i][1]]);
+        
+        glm::vec2 tempClosest;
+        float dist = pointToSegmentDistance(p, a, b, &tempClosest);
+        
+        if (dist < minDist) {
+            minDist = dist;
+            closestPt2D = tempClosest;
+        }
+    }
+    
+    if (closestPoint) {
+        *closestPoint = vp.screenToWorld(
+            static_cast<int>(closestPt2D.x),
+            static_cast<int>(closestPt2D.y),
+            point.z
+        );
+    }
+    
+    return minDist * vp.worldPerPixel;
+}
+
+// ============================================
+// 几何辅助方法
+// ============================================
+
+float Picker::pointToSegmentDistance(
+    const glm::vec2& p,
+    const glm::vec2& a,
+    const glm::vec2& b,
+    glm::vec2* closestPoint) {
+    
+    glm::vec2 ab = b - a;
+    glm::vec2 ap = p - a;
+    
+    float abLenSq = glm::dot(ab, ab);
+    
+    if (abLenSq < 1e-6f) {
+        // 线段退化为点
+        if (closestPoint) {
+            *closestPoint = a;
+        }
+        return glm::distance(p, a);
+    }
+    
+    // 参数 t：p 在 ab 上的投影位置
+    float t = glm::dot(ap, ab) / abLenSq;
+    t = glm::clamp(t, 0.0f, 1.0f);
+    
+    // 最近点
+    glm::vec2 closest = a + t * ab;
+    
+    if (closestPoint) {
+        *closestPoint = closest;
+    }
+    
+    return glm::distance(p, closest);
+}

@@ -303,6 +303,7 @@ void Renderer::syncFromDocument(const Document &doc, const ViewportState &vp, bo
         auto it = batches_.find(e->id);
         if (it != batches_.end()) {
             it->second.selected = e->selected;
+            it->second.hovered = e->hovered;
         }
 
         // 只处理脏实体或需要重新细分的圆弧
@@ -466,7 +467,14 @@ void Renderer::draw(const ViewportState &vp)
         // glLineWidth(selectionWidth_);
         
         glBindVertexArray(batch.vao);
-        glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+        if (batch.ibo != 0)
+        {
+            glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+        }
+        else
+        {
+            glDrawArrays(batch.drawMode, 0, batch.indexCount);
+        }
         glBindVertexArray(0);
         
         // 恢复线宽

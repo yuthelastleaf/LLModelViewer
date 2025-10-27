@@ -94,6 +94,7 @@ public slots:
     void selectAll();
     void invertSelection();
     void deleteSelected();
+    void drawSelectionBox();
 
 signals:
     void documentChanged();
@@ -115,12 +116,16 @@ private:
 
     // 绘图状态
     enum class DrawMode {
-        SELECT = 0,
-        LINE = 1,
-        CIRCLE = 2,
-        RECT = 3,
-        BOX
+        VIEW = 0,
+        SELECT,
+        LINE,
+        CIRCLE,
+        RECT,
+        BOX,
+        COUNT
     };
+
+    const char* drawModeToString(DrawMode mode);
 
 private:
     // ============================================
@@ -150,6 +155,11 @@ private:
     // ✅ v0.2: 选择系统
     std::unique_ptr<SelectionManager> selectionManager_;
     std::unique_ptr<Picker> picker_;
+
+    // 框选状态
+    bool isBoxSelecting_ = false;
+    QPoint boxSelectStart_;
+    QPoint boxSelectEnd_;
 };
 
 #endif // CADDEMO_H

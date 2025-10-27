@@ -61,6 +61,7 @@ struct GpuBatch {
     GLenum drawMode = GL_LINES;  // GL_LINES, GL_LINE_STRIP, GL_TRIANGLES
     // ✅ v0.2: 选择状态
     bool selected = false;    // 是否被选中
+    bool hovered = false;   // ✅ 悬停状态
 };
 
 class Renderer : protected QOpenGLFunctions_3_3_Core {
@@ -90,6 +91,10 @@ public:
     void setSelectionWidth(float width) { selectionWidth_ = width; }
     float getSelectionWidth() const { return selectionWidth_; }
 
+    // ✅ 悬停高亮颜色
+    void setHoverColor(std::uint32_t rgba) { hoverColor_ = rgba; }
+    std::uint32_t getHoverColor() const { return hoverColor_; }
+
 private:
     // 上传 helpers
     void uploadLine_(EntityId id, const Line& L, std::uint32_t rgba);
@@ -118,6 +123,7 @@ private:
     float lastWorldPerPixel_ = -1.0f;
 
     // ✅ v0.2: 高亮渲染参数
-    std::uint32_t selectionColor_ = 0xFF9900FF;  // 橙色
+    std::uint32_t selectionColor_ = 0xFFFFFFFF;  // 橙色
+    std::uint32_t hoverColor_ = 0x00FFFFFF;      // 悬停：青色
     float selectionWidth_ = 2.0f;                 // 线宽（未来支持）
 };
