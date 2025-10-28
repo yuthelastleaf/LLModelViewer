@@ -6,9 +6,12 @@
 #include <sstream>
 #include <iostream>
 
+// ============================================
+// 构造函数：从文件路径加载（顶点 + 片段）
+// ============================================
+
 Shader::Shader(const char* vertexPath, const char* fragmentPath)
 {
-    // 初始化 OpenGL 函数
     initializeOpenGLFunctions();
     
     std::string vertexCode;
@@ -50,9 +53,78 @@ Shader::Shader(const char* vertexPath, const char* fragmentPath)
     compileShaders(vShaderCode, fShaderCode);
 }
 
+// ============================================
+// ✅ 构造函数：从文件路径加载（顶点 + 几何 + 片段）
+// ============================================
+
+Shader::Shader(const char* vertexPath, 
+               const char* geometryPath,
+               const char* fragmentPath)
+{
+    initializeOpenGLFunctions();
+    
+    std::string vertexCode;
+    std::string geometryCode;
+    std::string fragmentCode;
+    std::ifstream vShaderFile;
+    std::ifstream gShaderFile;
+    std::ifstream fShaderFile;
+
+    vShaderFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+    gShaderFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+    fShaderFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+    
+    try
+    {
+        // 打开文件
+        vShaderFile.open(vertexPath);
+        gShaderFile.open(geometryPath);
+        fShaderFile.open(fragmentPath);
+        
+        // 读取文件内容
+        std::stringstream vShaderStream, gShaderStream, fShaderStream;
+        vShaderStream << vShaderFile.rdbuf();
+        gShaderStream << gShaderFile.rdbuf();
+        fShaderStream << fShaderFile.rdbuf();
+        
+        // 关闭文件
+        vShaderFile.close();
+        gShaderFile.close();
+        fShaderFile.close();
+        
+        // 转换为字符串
+        vertexCode = vShaderStream.str();
+        geometryCode = gShaderStream.str();
+        fragmentCode = fShaderStream.str();
+        
+        qDebug() << "Shader files loaded successfully (with geometry shader):";
+        qDebug() << "  Vertex:" << vertexPath;
+        qDebug() << "  Geometry:" << geometryPath;
+        qDebug() << "  Fragment:" << fragmentPath;
+    }
+    catch (std::ifstream::failure& e)
+    {
+        qCritical() << "ERROR::SHADER::FILE_NOT_SUCCESSFULLY_READ:" << e.what();
+        qCritical() << "  Vertex path:" << vertexPath;
+        qCritical() << "  Geometry path:" << geometryPath;
+        qCritical() << "  Fragment path:" << fragmentPath;
+        ID = 0;
+        return;
+    }
+    
+    const char* vShaderCode = vertexCode.c_str();
+    const char* gShaderCode = geometryCode.c_str();
+    const char* fShaderCode = fragmentCode.c_str();
+
+    compileShaders(vShaderCode, gShaderCode, fShaderCode);
+}
+
+// ============================================
+// 构造函数：从字符串加载（顶点 + 片段）
+// ============================================
+
 Shader::Shader(const char* vertexContent, const char* fragmentContent, bool fromString)
 {
-    // 初始化 OpenGL 函数
     initializeOpenGLFunctions();
     
     if (fromString) {
@@ -60,6 +132,27 @@ Shader::Shader(const char* vertexContent, const char* fragmentContent, bool from
         compileShaders(vertexContent, fragmentContent);
     }
 }
+
+// ============================================
+// ✅ 构造函数：从字符串加载（顶点 + 几何 + 片段）
+// ============================================
+
+Shader::Shader(const char* vertexContent, 
+               const char* geometryContent,
+               const char* fragmentContent,
+               bool fromString)
+{
+    initializeOpenGLFunctions();
+    
+    if (fromString) {
+        qDebug() << "Creating shader from string content (with geometry shader)";
+        compileShaders(vertexContent, geometryContent, fragmentContent);
+    }
+}
+
+// ============================================
+// 析构函数
+// ============================================
 
 Shader::~Shader()
 {
@@ -69,12 +162,19 @@ Shader::~Shader()
     }
 }
 
+// ============================================
+// 使用着色器
+// ============================================
+
 void Shader::use()
 {
     glUseProgram(ID);
 }
 
-// 移除所有函数的 const 修饰符
+// ============================================
+// Uniform 工具函数
+// ============================================
+
 void Shader::setBool(const std::string& name, bool value)
 {
     glUniform1i(glGetUniformLocation(ID, name.c_str()), (int)value);
@@ -105,27 +205,6 @@ void Shader::setVec3(const std::string& name, const glm::vec3& value)
     glUniform3fv(glGetUniformLocation(ID, name.c_str()), 1, &value[0]);
 }
 
-// void Shader::setVec4(const std::string& name, const glm::vec4& value)
-// {
-//     glUniform4fv(glGetUniformLocation(ID, name.c_str()), 1, &value[0]);
-// }
-
-// void Shader::setMat4(const std::string& name, const glm::mat4& mat)
-// {
-//     glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, glm::value_ptr(mat));
-// }
-void Shader::setMat4(const std::string& name, const glm::mat4& mat)
-{
-    GLint location = glGetUniformLocation(ID, name.c_str());
-    
-    if (location == -1) {
-        qWarning() << "Uniform" << name.c_str() << "not found in shader" << ID;
-        return;
-    }
-    
-    glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(mat));
-}
-
 void Shader::setVec4(const std::string& name, const glm::vec4& value)
 {
     GLint location = glGetUniformLocation(ID, name.c_str());
@@ -138,11 +217,26 @@ void Shader::setVec4(const std::string& name, const glm::vec4& value)
     glUniform4fv(location, 1, &value[0]);
 }
 
+void Shader::setMat4(const std::string& name, const glm::mat4& mat)
+{
+    GLint location = glGetUniformLocation(ID, name.c_str());
+    
+    if (location == -1) {
+        qWarning() << "Uniform" << name.c_str() << "not found in shader" << ID;
+        return;
+    }
+    
+    glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(mat));
+}
 
 void Shader::setMat3(const std::string& name, const glm::mat3& mat)
 {
     glUniformMatrix3fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, glm::value_ptr(mat));
 }
+
+// ============================================
+// 编译着色器（顶点 + 片段）
+// ============================================
 
 void Shader::compileShaders(const char* vShaderCode, const char* fShaderCode)
 {
@@ -173,6 +267,64 @@ void Shader::compileShaders(const char* vShaderCode, const char* fShaderCode)
     
     qDebug() << "Shader program created successfully, ID:" << ID;
 }
+
+// ============================================
+// ✅ 编译着色器（顶点 + 几何 + 片段）
+// ============================================
+
+void Shader::compileShaders(const char* vShaderCode,
+                           const char* gShaderCode,
+                           const char* fShaderCode)
+{
+    unsigned int vertex, geometry, fragment;
+
+    // ────────────────────────────────────────
+    // 1. 编译顶点着色器
+    // ────────────────────────────────────────
+    vertex = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertex, 1, &vShaderCode, NULL);
+    glCompileShader(vertex);
+    checkCompileErrors(vertex, "VERTEX");
+
+    // ────────────────────────────────────────
+    // 2. ✅ 编译几何着色器
+    // ────────────────────────────────────────
+    geometry = glCreateShader(GL_GEOMETRY_SHADER);
+    glShaderSource(geometry, 1, &gShaderCode, NULL);
+    glCompileShader(geometry);
+    checkCompileErrors(geometry, "GEOMETRY");
+
+    // ────────────────────────────────────────
+    // 3. 编译片段着色器
+    // ────────────────────────────────────────
+    fragment = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragment, 1, &fShaderCode, NULL);
+    glCompileShader(fragment);
+    checkCompileErrors(fragment, "FRAGMENT");
+
+    // ────────────────────────────────────────
+    // 4. 链接着色器程序
+    // ────────────────────────────────────────
+    ID = glCreateProgram();
+    glAttachShader(ID, vertex);
+    glAttachShader(ID, geometry);  // ✅ 附加几何着色器
+    glAttachShader(ID, fragment);
+    glLinkProgram(ID);
+    checkCompileErrors(ID, "PROGRAM");
+
+    // ────────────────────────────────────────
+    // 5. 删除着色器对象（已链接到程序中）
+    // ────────────────────────────────────────
+    glDeleteShader(vertex);
+    glDeleteShader(geometry);
+    glDeleteShader(fragment);
+    
+    qDebug() << "Shader program with geometry shader created successfully, ID:" << ID;
+}
+
+// ============================================
+// 检查编译错误
+// ============================================
 
 void Shader::checkCompileErrors(unsigned int shader, std::string type)
 {

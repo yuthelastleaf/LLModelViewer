@@ -95,6 +95,41 @@ public:
     void setHoverColor(std::uint32_t rgba) { hoverColor_ = rgba; }
     std::uint32_t getHoverColor() const { return hoverColor_; }
 
+public:
+    struct HoverStyle {
+        std::uint32_t color;        // 主颜色
+        float lineWidth;            // 线宽（像素）
+        bool enableGlow;            // 是否启用发光效果
+        std::uint32_t glowColor;    // 发光颜色
+        float glowWidth;            // 发光宽度（像素）
+        
+        // ✅ 默认构造函数（提供默认值）
+        HoverStyle()
+            : color(0x00FFFFFF)         // 青色
+            , lineWidth(2.0f)
+            , enableGlow(true)
+            , glowColor(0x00FFFF80)     // 半透明青色
+            , glowWidth(4.0f)
+        {}
+    };
+    
+    struct SelectionStyle {
+        std::uint32_t color;
+        float lineWidth;
+        bool enableGlow;
+        std::uint32_t glowColor;
+        float glowWidth;
+        
+        // ✅ 默认构造函数（提供默认值）
+        SelectionStyle()
+            : color(0xFF9900FF)         // 橙色
+            , lineWidth(2.0f)
+            , enableGlow(true)
+            , glowColor(0xFF990080)     // 半透明橙色
+            , glowWidth(4.0f)
+        {}
+    };
+
 private:
     // 上传 helpers
     void uploadLine_(EntityId id, const Line& L, std::uint32_t rgba);
@@ -115,6 +150,7 @@ private:
     
     // ✅ 使用自定义 Shader
     std::unique_ptr<Shader> shaderLines_;
+    std::unique_ptr<Shader> shader_hover_Lines_;
 
     // 每实体一个批（v0.1 简单实现；后续可合批）
     std::unordered_map<EntityId, GpuBatch> batches_;
@@ -126,4 +162,7 @@ private:
     std::uint32_t selectionColor_ = 0xFFFFFFFF;  // 橙色
     std::uint32_t hoverColor_ = 0x00FFFFFF;      // 悬停：青色
     float selectionWidth_ = 2.0f;                 // 线宽（未来支持）
+
+    HoverStyle hoverStyle_;
+    SelectionStyle selectionStyle_;
 };

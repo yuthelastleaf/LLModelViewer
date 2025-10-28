@@ -178,10 +178,10 @@ void GridRenderer::draw(Renderer &r, const ViewportState &vp,
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-     // ✅ 使用深度测试 + 禁用深度写入，让网格在背景但不影响深度缓冲
+    // ✅ 使用深度测试 + 禁用深度写入，让网格在背景但不影响深度缓冲
     glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);  // 允许等深度通过
-    glDepthMask(GL_FALSE);   // 禁止写入深度缓冲
+    glDepthFunc(GL_LEQUAL); // 允许等深度通过
+    glDepthMask(GL_FALSE);  // 禁止写入深度缓冲
     // 启用混合
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -264,18 +264,20 @@ void AxisRenderer::cleanup()
     initialized_ = false;
 }
 
-void AxisRenderer::draw(Renderer& r, const ViewportState& vp,
+void AxisRenderer::draw(Renderer &r, const ViewportState &vp,
                         float axisLength,
                         std::uint32_t xColor,
                         std::uint32_t yColor,
                         std::uint32_t zColor,
                         bool drawZ)
 {
-    if (!initialized_) {
+    if (!initialized_)
+    {
         initializeAxis();
     }
 
-    auto colorToVec4 = [](std::uint32_t color) {
+    auto colorToVec4 = [](std::uint32_t color)
+    {
         float r = ((color >> 24) & 0xFF) / 255.0f;
         float g = ((color >> 16) & 0xFF) / 255.0f;
         float b = ((color >> 8) & 0xFF) / 255.0f;
@@ -290,31 +292,43 @@ void AxisRenderer::draw(Renderer& r, const ViewportState& vp,
     // ✅ 总是准备完整的 3 轴数据（简单！）
     float vertices[] = {
         // X 轴（顶点 0, 1）
-        0.0f, 0.0f, 0.0f,  xCol.r, xCol.g, xCol.b, 1.0f,
-        axisLength, 0.0f, 0.0f,  xCol.r, xCol.g, xCol.b, 1.0f,
+        0.0f, 0.0f, 0.0f, xCol.r, xCol.g, xCol.b, 1.0f,
+        axisLength, 0.0f, 0.0f, xCol.r, xCol.g, xCol.b, 1.0f,
         // Y 轴（顶点 2, 3）
-        0.0f, 0.0f, 0.0f,  yCol.r, yCol.g, yCol.b, yCol.a,
-        0.0f, axisLength, 0.0f,  yCol.r, yCol.g, yCol.b, yCol.a,
+        0.0f, 0.0f, 0.0f, yCol.r, yCol.g, yCol.b, yCol.a,
+        0.0f, axisLength, 0.0f, yCol.r, yCol.g, yCol.b, yCol.a,
         // Z 轴（顶点 4, 5）
-        0.0f, 0.0f, 0.0f,  zCol.r, zCol.g, zCol.b, zCol.a,
-        0.0f, 0.0f, axisLength,  zCol.r, zCol.g, zCol.b, zCol.a
-    };
+        0.0f, 0.0f, 0.0f, zCol.r, zCol.g, zCol.b, zCol.a,
+        0.0f, 0.0f, axisLength, zCol.r, zCol.g, zCol.b, zCol.a};
+
+    GLenum err;
+    while ((err = glGetError()) != GL_NO_ERROR)
+    {
+        qWarning() << "draw start axis:" << err;
+    }
 
     glBindVertexArray(axisVAO_);
     glBindBuffer(GL_ARRAY_BUFFER, axisVBO_);
-    
+
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_DYNAMIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void *)0);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void*)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void *)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
+
+    
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_ALWAYS);
     glEnable(GL_LINE_SMOOTH);
     glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-    glLineWidth(2.0f);
+    // glLineWidth(2.0f);
+
+    while ((err = glGetError()) != GL_NO_ERROR)
+    {
+        qWarning() << "draw end axis:" << err;
+    }
 
     axisShader_->use();
     axisShader_->setMat4("model", glm::mat4(1.0f));
@@ -322,10 +336,14 @@ void AxisRenderer::draw(Renderer& r, const ViewportState& vp,
     axisShader_->setMat4("projection", vp.proj);
 
     
+
     // ✅ 如果需要，再绘制 Z 轴（顶点 4-5，共 2 个顶点 = 1 条线）
-    if (drawZ) {
+    if (drawZ)
+    {
         glDrawArrays(GL_LINES, 0, 6);
-    } else {
+    }
+    else
+    {
         // ✅ 先绘制 X 和 Y 轴（顶点 0-3，共 4 个顶点 = 2 条线）
         glDrawArrays(GL_LINES, 0, 4);
     }
@@ -334,4 +352,5 @@ void AxisRenderer::draw(Renderer& r, const ViewportState& vp,
     glDisable(GL_LINE_SMOOTH);
     glLineWidth(1.0f);
     glBindVertexArray(0);
+
 }

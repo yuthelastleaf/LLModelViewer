@@ -415,6 +415,7 @@ std::vector<Picker::PickResult> Picker::pickAll2D(
         }
     }
     
+    qDebug() << "res size : " << results.size();
     // 按距离排序
     std::sort(results.begin(), results.end());
     
@@ -438,6 +439,14 @@ float Picker::distanceToLine2D(
     
     glm::vec2 closest2D;
     float pixelDist = pointToSegmentDistance(p, a, b, &closest2D);
+
+    qDebug() << "======start======";
+    qDebug() << p.x << " - " << p.y;
+    qDebug() << a.x << " - " << a.y;
+    qDebug() << b.x << " - " << b.y;
+    qDebug() << closest2D.x << " - " << closest2D.y;
+    qDebug() << pixelDist << " - " << pixelDist * vp.worldPerPixel;
+    qDebug() << "======end======";
     
     if (closestPoint) {
         // 将屏幕坐标转回世界坐标

@@ -59,4 +59,5 @@ if /i "%run%"=="y" (
     start build\bin\OpenGLViewer.exe
 )
 
-pause
+REM 需要脚本停止可以写入pause
+REM pause

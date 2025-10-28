@@ -13,9 +13,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 CADDemo::CADDemo(QObject *parent)
-    : Demo(parent), document_(std::make_unique<Document>()), renderer_(std::make_unique<Renderer>()), gridRenderer_(std::make_unique<GridRenderer>()), axisRenderer_(std::make_unique<AxisRenderer>()), showGrid_(true), showAxis_(true), documentDirty_(true), isPanning_(false), cad_mode_(DrawMode::VIEW), cur_draw_(0)
-    , selectionManager_(std::make_unique<SelectionManager>(document_.get(), this))
-    , picker_(std::make_unique<Picker>())
+    : Demo(parent), document_(std::make_unique<Document>()), renderer_(std::make_unique<Renderer>()), gridRenderer_(std::make_unique<GridRenderer>()), axisRenderer_(std::make_unique<AxisRenderer>()), showGrid_(true), showAxis_(true), documentDirty_(true), isPanning_(false), cad_mode_(DrawMode::VIEW), cur_draw_(0), selectionManager_(std::make_unique<SelectionManager>(document_.get(), this)), picker_(std::make_unique<Picker>())
 {
     // ✅ 默认设置为 2D CAD 俯视图
     camera->SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
@@ -47,9 +45,8 @@ CADDemo::CADDemo(QObject *parent)
 
     // ✅ 连接选择信号
     connect(selectionManager_.get(), &SelectionManager::selectionChanged,
-            this, [this](int count) {
-                emit statusMessage(QString("Selected: %1 entities").arg(count));
-            });
+            this, [this](int count)
+            { emit statusMessage(QString("Selected: %1 entities").arg(count)); });
 }
 
 CADDemo::~CADDemo()
@@ -115,10 +112,10 @@ void CADDemo::render()
     renderer_->draw(viewportState_);
 
     // ✅ v0.2: 绘制框选矩形
-    if (isBoxSelecting_) {
+    if (isBoxSelecting_)
+    {
         drawSelectionBox();
     }
-
 }
 
 void CADDemo::cleanup()
@@ -235,57 +232,67 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
     case DrawMode::SELECT:
         // 获取键盘修饰键
         Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
-        
+
         // 判断选择模式
         SelectionManager::SelectMode selectMode = SelectionManager::SelectMode::REPLACE;
-        if (modifiers & Qt::ShiftModifier) {
+        if (modifiers & Qt::ShiftModifier)
+        {
             selectMode = SelectionManager::SelectMode::ADD;
-        } else if (modifiers & Qt::ControlModifier) {
+        }
+        else if (modifiers & Qt::ControlModifier)
+        {
             selectMode = SelectionManager::SelectMode::TOGGLE;
         }
 
         // ✅ 根据相机模式选择拾取方式
         std::optional<Picker::PickResult> pickResult;
-        
+
         // 单击选择
-        if (camera->is2D()) {
+        if (camera->is2D())
+        {
             // 2D 模式：直接使用世界坐标
             // TODO: 2D 拾取实现
             // ✅ 2D 模式：使用世界坐标直接拾取
             qDebug() << "2D pick at world pos:" << wpoint.x << wpoint.y << wpoint.z;
-            
+
             pickResult = picker_->pick2D(
                 wpoint,
                 *document_,
                 viewportState_,
-                5.0f  // 5 像素阈值
+                5.0f // 5 像素阈值
             );
-        } else {
+        }
+        else
+        {
             // 3D 模式：射线拾取
             auto pickResult = picker_->pick(
                 point.x(), point.y(),
                 *document_,
                 viewportState_,
-                0.1f  // 拾取阈值
+                0.1f // 拾取阈值
             );
         }
 
         // 处理拾取结果
-        if (pickResult.has_value()) {
+        if (pickResult.has_value())
+        {
             qDebug() << "Picked entity:" << pickResult->entityId
                      << "at distance:" << pickResult->distance;
-            
+
             selectionManager_->selectWithMode(pickResult->entityId, selectMode);
             documentDirty_ = true;
-        } else {
+        }
+        else
+        {
             qDebug() << "No entity picked";
-            
+
             // 没有拾取到实体
-            if (selectMode == SelectionManager::SelectMode::REPLACE) {
+            if (selectMode == SelectionManager::SelectMode::REPLACE)
+            {
                 selectionManager_->clearSelection();
                 documentDirty_ = true;
             }
-            
+
             // 开始框选
             isBoxSelecting_ = true;
             boxSelectStart_ = point;
@@ -294,7 +301,7 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
 
         // if (cur_draw_ != 0) {
         //     glm::vec3 currentPos3D;
-            
+
         //     if (camera->is2D()) {
         //         currentPos3D = wpoint;
         //     } else {
@@ -303,7 +310,7 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
         //             return;
         //         }
         //     }
-            
+
         //     updateDrawingEntity(currentPos3D);
         // }
         break;
@@ -312,6 +319,48 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
 
 void CADDemo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoint, glm::vec3 delta_wpoint)
 {
+    switch (cad_mode_)
+    {
+    case DrawMode::SELECT:
+    {
+        // 清除之前的悬停状态
+        for (auto *entity : document_->all())
+        {
+            if (entity && entity->hovered)
+            {
+                entity->hovered = false;
+                entity->dirty = true;
+            }
+        }
+
+        // 检测当前悬停的实体
+        std::optional<Picker::PickResult> pickResult;
+
+        if (camera->is2D())
+        {
+            pickResult = picker_->pick2D(wpoint, *document_, viewportState_, 5.0f);
+        }
+        else
+        {
+            pickResult = picker_->pick(point.x(), point.y(), *document_, viewportState_, 0.1f);
+        }
+
+        if (pickResult.has_value())
+        {
+            if (Entity *entity = document_->get(pickResult->entityId))
+            {
+                entity->hovered = true;
+                entity->dirty = true;
+                documentDirty_ = true;
+
+                // 显示实体信息
+                emit statusMessage(QString("Hover: Entity %1").arg(pickResult->entityId));
+            }
+        }
+        break;
+    }
+    }
+
     if (!isPanning_)
     {
         return;
@@ -354,35 +403,6 @@ void CADDemo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoin
         emit statusMessage("Rectangle tool selected - Click to set first corner");
         qDebug() << "Switched to: Rectangle";
         break;
-    case DrawMode::SELECT:
-        // 清除之前的悬停状态
-        for (auto* entity : document_->all()) {
-            if (entity && entity->hovered) {
-                entity->hovered = false;
-                entity->dirty = true;
-            }
-        }
-        
-        // 检测当前悬停的实体
-        std::optional<Picker::PickResult> pickResult;
-        
-        if (camera->is2D()) {
-            pickResult = picker_->pick2D(wpoint, *document_, viewportState_, 5.0f);
-        } else {
-            pickResult = picker_->pick(point.x(), point.y(), *document_, viewportState_, 0.1f);
-        }
-        
-        if (pickResult.has_value()) {
-            if (Entity* entity = document_->get(pickResult->entityId)) {
-                entity->hovered = true;
-                entity->dirty = true;
-                documentDirty_ = true;
-                
-                // 显示实体信息
-                emit statusMessage(QString("Hover: Entity %1").arg(pickResult->entityId));
-            }
-        }
-        break;
     }
 }
 
@@ -393,39 +413,44 @@ void CADDemo::processMouseRelease()
     // ============================================
     // ✅ v0.2: 框选完成
     // ============================================
-    
-    if (isBoxSelecting_) {
+
+    if (isBoxSelecting_)
+    {
         isBoxSelecting_ = false;
-        
+
         // 获取框选结果
         int minX = std::min(boxSelectStart_.x(), boxSelectEnd_.x());
         int maxX = std::max(boxSelectStart_.x(), boxSelectEnd_.x());
         int minY = std::min(boxSelectStart_.y(), boxSelectEnd_.y());
         int maxY = std::max(boxSelectStart_.y(), boxSelectEnd_.y());
-        
+
         // 判断是否是有效框选（至少拖拽了 5 像素）
-        if (std::abs(maxX - minX) > 5 || std::abs(maxY - minY) > 5) {
+        if (std::abs(maxX - minX) > 5 || std::abs(maxY - minY) > 5)
+        {
             // 获取键盘修饰键
             Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
             SelectionManager::SelectMode selectMode = SelectionManager::SelectMode::REPLACE;
-            
-            if (modifiers & Qt::ShiftModifier) {
+
+            if (modifiers & Qt::ShiftModifier)
+            {
                 selectMode = SelectionManager::SelectMode::ADD;
-            } else if (modifiers & Qt::ControlModifier) {
+            }
+            else if (modifiers & Qt::ControlModifier)
+            {
                 selectMode = SelectionManager::SelectMode::TOGGLE;
             }
-            
+
             // 执行框选
             std::vector<EntityId> pickedIds = picker_->pickBox(
                 minX, minY, maxX, maxY,
                 *document_,
                 viewportState_,
-                Picker::BoxSelectMode::INTERSECT
-            );
-            
+                Picker::BoxSelectMode::INTERSECT);
+
             qDebug() << "Box selection picked" << pickedIds.size() << "entities";
-            
-            if (!pickedIds.empty()) {
+
+            if (!pickedIds.empty())
+            {
                 selectionManager_->selectWithMode(pickedIds, selectMode);
                 documentDirty_ = true;
             }
@@ -678,16 +703,18 @@ QWidget *CADDemo::createCADControls(QWidget *parent)
     QButtonGroup *drawModeGroup = new QButtonGroup(drawLayout);
     drawModeGroup->setExclusive(true);
 
-    for (int i = 0; i < static_cast<int>(DrawMode::COUNT); ++i) {
+    for (int i = 0; i < static_cast<int>(DrawMode::COUNT); ++i)
+    {
         DrawMode mode = static_cast<DrawMode>(i);
         QRadioButton *drawbtn = new QRadioButton(drawModeToString(mode));
-        if(!i) {
+        if (!i)
+        {
             drawbtn->setChecked(true);
         }
         drawModeGroup->addButton(drawbtn, (int)mode);
         drawLayout->addWidget(drawbtn);
     }
-    
+
     layout->addWidget(drawGroup);
     connect(drawModeGroup, QOverload<int>::of(&QButtonGroup::idClicked), this, &CADDemo::onDrawModeChanged);
 
@@ -811,22 +838,30 @@ void CADDemo::toggleWorkPlaneFollow(bool enable)
                               : "Work plane fixed");
 }
 
-
 void CADDemo::offsetWorkPlane(float distance)
 {
     workPlane_->moveAlongNormal(distance);
     emit statusMessage(QString("Work plane offset: %1").arg(distance));
 }
 
-const char* CADDemo::drawModeToString(DrawMode mode) {
-    switch(mode) {
-        case DrawMode::VIEW:   return "View";
-        case DrawMode::SELECT: return "Select";
-        case DrawMode::LINE:   return "Line";
-        case DrawMode::CIRCLE: return "Circle";
-        case DrawMode::RECT:   return "Rect";
-        case DrawMode::BOX:    return "Box";
-        default:               return "Unknown";
+const char *CADDemo::drawModeToString(DrawMode mode)
+{
+    switch (mode)
+    {
+    case DrawMode::VIEW:
+        return "View";
+    case DrawMode::SELECT:
+        return "Select";
+    case DrawMode::LINE:
+        return "Line";
+    case DrawMode::CIRCLE:
+        return "Circle";
+    case DrawMode::RECT:
+        return "Rect";
+    case DrawMode::BOX:
+        return "Box";
+    default:
+        return "Unknown";
     }
 }
 
@@ -834,53 +869,59 @@ const char* CADDemo::drawModeToString(DrawMode mode) {
 // ✅ v0.2: 选择操作 Slots
 // ============================================
 
-void CADDemo::clearSelection() {
+void CADDemo::clearSelection()
+{
     selectionManager_->clearSelection();
     documentDirty_ = true;
 }
 
-void CADDemo::selectAll() {
+void CADDemo::selectAll()
+{
     selectionManager_->selectAll();
     documentDirty_ = true;
 }
 
-void CADDemo::invertSelection() {
+void CADDemo::invertSelection()
+{
     selectionManager_->invertSelection();
     documentDirty_ = true;
 }
 
-void CADDemo::deleteSelected() {
+void CADDemo::deleteSelected()
+{
     auto selectedIds = selectionManager_->getSelectedIds();
-    
-    if (selectedIds.empty()) {
+
+    if (selectedIds.empty())
+    {
         emit statusMessage("No selection to delete");
         return;
     }
-    
-    for (EntityId id : selectedIds) {
+
+    for (EntityId id : selectedIds)
+    {
         document_->remove(id);
         renderer_->removeBatch(id);
     }
-    
+
     selectionManager_->clearSelection();
     documentDirty_ = true;
-    
+
     emit statusMessage(QString("Deleted %1 entities").arg(selectedIds.size()));
     emit documentChanged();
 }
 
-void CADDemo::drawSelectionBox() {
+void CADDemo::drawSelectionBox()
+{
     // 将屏幕坐标转为世界坐标
     glm::vec3 p0 = viewportState_.screenToWorld(boxSelectStart_.x(), boxSelectStart_.y());
     glm::vec3 p1 = viewportState_.screenToWorld(boxSelectEnd_.x(), boxSelectStart_.y());
     glm::vec3 p2 = viewportState_.screenToWorld(boxSelectEnd_.x(), boxSelectEnd_.y());
     glm::vec3 p3 = viewportState_.screenToWorld(boxSelectStart_.x(), boxSelectEnd_.y());
-    
+
     // 绘制矩形边框（虚线效果可以后续添加）
     std::vector<glm::vec3> boxLines = {
-        p0, p1,  p1, p2,  p2, p3,  p3, p0
-    };
-    
-    std::uint32_t boxColor = 0x00FF00FF;  // 绿色
+        p0, p1, p1, p2, p2, p3, p3, p0};
+
+    std::uint32_t boxColor = 0x00FF00FF; // 绿色
     renderer_->drawLineSegments(boxLines, boxColor, viewportState_);
 }
