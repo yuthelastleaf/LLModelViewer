@@ -477,7 +477,7 @@ void Renderer::draw(const ViewportState &vp)
     // ✅ 设置几何着色器参数
     shader_hover_Lines_->setVec2("viewport", glm::vec2(vp.width, vp.height));
     shader_hover_Lines_->setFloat("thickness", hoverStyle_.lineWidth * 2.0f); // 发光层更粗
-    shader_hover_Lines_->setMat4("projection", vp.proj);
+    // shader_hover_Lines_->setMat4("projection", vp.proj);
 
     for (const auto &kv : batches_)
     {
@@ -527,6 +527,9 @@ void Renderer::draw(const ViewportState &vp)
         }
         glBindVertexArray(0);
     }
+
+    // 重新激活线条着色器
+    shaderLines_->use();
 
     // 第二遍：绘制选中的实体（高亮）
     for (const auto &kv : batches_)

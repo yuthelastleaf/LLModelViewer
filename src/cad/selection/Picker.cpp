@@ -476,10 +476,10 @@ float Picker::distanceToPolyline2D(
     float minDist = std::numeric_limits<float>::max();
     glm::vec2 closestPt2D;
     
-    // 检查所有线段
-    for (size_t i = 0; i < polyline.pts.size() - 1; ++i) {
-        glm::vec2 a = vp.worldToScreen(polyline.pts[i]);
-        glm::vec2 b = vp.worldToScreen(polyline.pts[i + 1]);
+    // ✅ Lambda：检查一条线段并更新最小距离
+    auto checkSegment = [&](const glm::vec3& pt0, const glm::vec3& pt1) {
+        glm::vec2 a = vp.worldToScreen(pt0);
+        glm::vec2 b = vp.worldToScreen(pt1);
         
         glm::vec2 tempClosest;
         float dist = pointToSegmentDistance(p, a, b, &tempClosest);
@@ -488,6 +488,16 @@ float Picker::distanceToPolyline2D(
             minDist = dist;
             closestPt2D = tempClosest;
         }
+    };
+    
+    // 检查所有线段
+    for (size_t i = 0; i < polyline.pts.size() - 1; ++i) {
+        checkSegment(polyline.pts[i], polyline.pts[i + 1]);
+    }
+    
+    // 如果是闭合多段线，检查首尾连接线段
+    if (polyline.closed && polyline.pts.size() > 2) {
+        checkSegment(polyline.pts.back(), polyline.pts.front());
     }
     
     if (closestPoint) {
@@ -519,6 +529,9 @@ float Picker::distanceToCircle2D(
     
     // 点到圆周的距离
     float distToCircle = std::abs(distToCenter - radiusPixel);
+
+    qDebug() << "cicle calc : " << radiusPixel << " - " << distToCenter;
+    qDebug() << "cicle dis : " << glm::distance(glm::vec2(point.x, point.y), glm::vec2(circle.c.x, circle.c.y));
     
     if (closestPoint) {
         // 计算圆周上最近的点
