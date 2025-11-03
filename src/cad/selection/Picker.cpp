@@ -521,31 +521,56 @@ float Picker::distanceToCircle2D(
     glm::vec2 p = vp.worldToScreen(point);
     glm::vec2 center = vp.worldToScreen(circle.c);
     
-    // 圆在屏幕上的半径（像素）
-    float radiusPixel = circle.r / vp.worldPerPixel;
+    // ⭐ 修正：在圆心位置计算实际的像素大小
+    // 计算圆周上一个点（沿X轴偏移半径）
+    glm::vec3 circleEdgePoint = circle.c + glm::vec3(circle.r, 0.0f, 0.0f);
+    glm::vec2 edgeScreen = vp.worldToScreen(circleEdgePoint);
     
-    // 点到圆心的距离
+    // 圆在屏幕上的实际半径（像素）
+    float radiusPixel = glm::distance(center, edgeScreen);
+    
+    // 点到圆心的距离（屏幕像素）
     float distToCenter = glm::distance(p, center);
     
-    // 点到圆周的距离
-    float distToCircle = std::abs(distToCenter - radiusPixel);
-
-    qDebug() << "cicle calc : " << radiusPixel << " - " << distToCenter;
-    qDebug() << "cicle dis : " << glm::distance(glm::vec2(point.x, point.y), glm::vec2(circle.c.x, circle.c.y));
+    // 点到圆周的距离（屏幕像素）
+    float distToCirclePixel = std::abs(distToCenter - radiusPixel);
     
     if (closestPoint) {
-        // 计算圆周上最近的点
-        glm::vec2 direction = glm::normalize(p - center);
-        glm::vec2 closest2D = center + direction * radiusPixel;
-        
-        *closestPoint = vp.screenToWorld(
-            static_cast<int>(closest2D.x),
-            static_cast<int>(closest2D.y),
-            circle.c.z
-        );
+        // 计算圆周上最近的点（屏幕空间）
+        if (distToCenter > 1e-6f) {
+            glm::vec2 direction = glm::normalize(p - center);
+            glm::vec2 closest2D = center + direction * radiusPixel;
+            
+            *closestPoint = vp.screenToWorld(
+                static_cast<int>(closest2D.x),
+                static_cast<int>(closest2D.y),
+                circle.c.z
+            );
+        } else {
+            // 点在圆心，任意选择一个圆周点
+            *closestPoint = circleEdgePoint;
+        }
     }
     
-    return distToCircle * vp.worldPerPixel;
+    // ⭐ 返回世界空间距离
+    // 方法1: 使用圆心处的像素大小转换
+    float pixelSizeAtCenter = vp.getPixelSizeAt(circle.c);
+    return distToCirclePixel * pixelSizeAtCenter;
+    
+    // 方法2（更精确）: 直接计算世界空间距离
+    // if (closestPoint) {
+    //     return glm::distance(point, *closestPoint);
+    // } else {
+    //     glm::vec3 tmpClosest;
+    //     glm::vec2 direction = glm::normalize(p - center);
+    //     glm::vec2 closest2D = center + direction * radiusPixel;
+    //     tmpClosest = vp.screenToWorld(
+    //         static_cast<int>(closest2D.x),
+    //         static_cast<int>(closest2D.y),
+    //         circle.c.z
+    //     );
+    //     return glm::distance(point, tmpClosest);
+    // }
 }
 
 float Picker::distanceToArc2D(
@@ -554,14 +579,12 @@ float Picker::distanceToArc2D(
     const ViewportState& vp,
     glm::vec3* closestPoint) const {
     
-    // 屏幕空间计算
-    glm::vec2 p = vp.worldToScreen(point);
-    glm::vec2 center = vp.worldToScreen(arc.c);
+    // ⭐ 直接在世界空间计算（2D，忽略Z）
+    glm::vec2 p2D(point.x, point.y);
+    glm::vec2 center2D(arc.c.x, arc.c.y);
     
-    float radiusPixel = arc.r / vp.worldPerPixel;
-    
-    // 计算点相对于圆心的角度
-    glm::vec2 toPoint = p - center;
+    // 计算点相对于圆心的角度（世界空间）
+    glm::vec2 toPoint = p2D - center2D;
     float angle = std::atan2(toPoint.y, toPoint.x);
     
     // 归一化到 [0, 2π]
@@ -581,48 +604,52 @@ float Picker::distanceToArc2D(
     
     if (inArc) {
         // 在圆弧范围内，计算到圆弧的距离
-        float distToCenter = glm::distance(p, center);
-        float distToArc = std::abs(distToCenter - radiusPixel);
+        float distToCenter = glm::distance(p2D, center2D);
+        float distToArc = std::abs(distToCenter - arc.r);
         
         if (closestPoint) {
-            glm::vec2 direction = glm::normalize(toPoint);
-            glm::vec2 closest2D = center + direction * radiusPixel;
-            *closestPoint = vp.screenToWorld(
-                static_cast<int>(closest2D.x),
-                static_cast<int>(closest2D.y),
-                arc.c.z
-            );
+            if (glm::length(toPoint) > 1e-6f) {
+                glm::vec2 direction = glm::normalize(toPoint);
+                glm::vec2 closest2D = center2D + direction * arc.r;
+                *closestPoint = glm::vec3(closest2D.x, closest2D.y, arc.c.z);
+            } else {
+                // 点在圆心
+                *closestPoint = glm::vec3(
+                    arc.c.x + arc.r, 
+                    arc.c.y, 
+                    arc.c.z
+                );
+            }
         }
         
-        return distToArc * vp.worldPerPixel;
+        return distToArc;
+        
     } else {
         // 不在圆弧范围内，计算到两个端点的距离
-        glm::vec2 p0(center.x + radiusPixel * std::cos(a0),
-                     center.y + radiusPixel * std::sin(a0));
-        glm::vec2 p1(center.x + radiusPixel * std::cos(a1),
-                     center.y + radiusPixel * std::sin(a1));
         
-        float dist0 = glm::distance(p, p0);
-        float dist1 = glm::distance(p, p1);
+        // 计算两个端点的世界坐标
+        glm::vec2 p0(
+            center2D.x + arc.r * std::cos(a0),
+            center2D.y + arc.r * std::sin(a0)
+        );
+        glm::vec2 p1(
+            center2D.x + arc.r * std::cos(a1),
+            center2D.y + arc.r * std::sin(a1)
+        );
+        
+        float dist0 = glm::distance(p2D, p0);
+        float dist1 = glm::distance(p2D, p1);
         
         if (dist0 < dist1) {
             if (closestPoint) {
-                *closestPoint = vp.screenToWorld(
-                    static_cast<int>(p0.x),
-                    static_cast<int>(p0.y),
-                    arc.c.z
-                );
+                *closestPoint = glm::vec3(p0.x, p0.y, arc.c.z);
             }
-            return dist0 * vp.worldPerPixel;
+            return dist0;
         } else {
             if (closestPoint) {
-                *closestPoint = vp.screenToWorld(
-                    static_cast<int>(p1.x),
-                    static_cast<int>(p1.y),
-                    arc.c.z
-                );
+                *closestPoint = glm::vec3(p1.x, p1.y, arc.c.z);
             }
-            return dist1 * vp.worldPerPixel;
+            return dist1;
         }
     }
 }
