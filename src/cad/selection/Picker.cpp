@@ -400,13 +400,6 @@ std::vector<Picker::PickResult> Picker::pickAll2D(
                 }
                 break;
             }
-            
-            case EntityType::Box: {
-                if (auto* box = std::get_if<Box>(&entity->geom)) {
-                    distance = distanceToBox2D(worldPos, *box, vp, &closestPoint);
-                }
-                break;
-            }
         }
         
         // 检查是否在阈值内

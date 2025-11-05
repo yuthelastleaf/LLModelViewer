@@ -14,7 +14,7 @@ bool Renderer::initialize()
 
         if (!shaderLines_ || shaderLines_->ID == 0)
         {
-            qCritical() << "Failed to create shader program";
+            qCritical() << "Failed to create shaderLines_";
             return false;
         }
 
@@ -24,7 +24,17 @@ bool Renderer::initialize()
             "shaders/cadshaders/line_hover/line_hover.fs");
         if (!shader_hover_Lines_ || shader_hover_Lines_->ID == 0)
         {
-            qCritical() << "Failed to create shader program";
+            qCritical() << "Failed to create shader_hover_Lines_";
+            return false;
+        }
+
+        shader_hover_Solid_ = std::make_unique<Shader>(
+            "shaders/cadshaders/solid_hover/solid_hover.vs",
+            "shaders/cadshaders/solid_hover/solid_hover.fs");
+
+        if (!shader_hover_Solid_ || shader_hover_Solid_->ID == 0)
+        {
+            qCritical() << "Failed to create shader_hover_Solid_";
             return false;
         }
 
@@ -401,176 +411,213 @@ void Renderer::removeBatch(EntityId id)
 
 void Renderer::draw(const ViewportState &vp)
 {
-    if (!shaderLines_)
+    if (!shaderLines_ || !shader_hover_Lines_ || !shader_hover_Solid_)
     {
         qWarning() << "Shader not initialized";
         return;
     }
 
-    // 激活着色器
-    shaderLines_->use();
-
-    // 检查当前程序
-    GLint currentProgram;
-    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
-
-    // 设置 MVP
+    // ============================================
+    // 准备通用参数
+    // ============================================
     glm::mat4 model(1.0f);
     glm::mat4 mvp = vp.proj * vp.view * model;
-    shaderLines_->setMat4("mvp", mvp);
 
-    // 绘制所有批次
-    int batchIndex = 0;
+    // 清除错误
+    while (glGetError() != GL_NO_ERROR)
+        ;
+
+    // ============================================
+    // 单次遍历，分层绘制
+    // ============================================
     for (const auto &kv : batches_)
     {
         const GpuBatch &batch = kv.second;
 
-        if (batch.indexCount == 0)
-        {
+        // 跳过无效批次
+        if (batch.indexCount == 0 || batch.vao == 0)
             continue;
+
+        // 判断几何类型
+        bool isLine = (batch.drawMode == GL_LINES ||
+                       batch.drawMode == GL_LINE_STRIP ||
+                       batch.drawMode == GL_LINE_LOOP);
+        bool isSolid = (batch.drawMode == GL_TRIANGLES);
+
+        // ────────────────────────────────────────
+        // 1️⃣ 绘制普通状态（未选中且未hover）
+        // ────────────────────────────────────────
+        if (!batch.selected && !batch.hovered)
+        {
+            if (isLine)
+            {
+                shaderLines_->use();
+                shaderLines_->setMat4("mvp", mvp);
+
+                float r = ((batch.rgba >> 24) & 0xFF) / 255.0f;
+                float g = ((batch.rgba >> 16) & 0xFF) / 255.0f;
+                float b = ((batch.rgba >> 8) & 0xFF) / 255.0f;
+                float a = ((batch.rgba) & 0xFF) / 255.0f;
+
+                shaderLines_->setVec4("color", glm::vec4(r, g, b, a));
+
+                glBindVertexArray(batch.vao);
+                if (batch.ibo)
+                    glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+                else
+                    glDrawArrays(batch.drawMode, 0, batch.indexCount);
+                glBindVertexArray(0);
+            }
+            else if (isSolid)
+            {
+                // 先用shaderLines_顶着，后续根据需求添加指定的着色器
+                shaderLines_->use();
+                shaderLines_->setMat4("mvp", mvp);
+                // shaderSolid_->setMat4("model", model);
+
+                float r = ((batch.rgba >> 24) & 0xFF) / 255.0f;
+                float g = ((batch.rgba >> 16) & 0xFF) / 255.0f;
+                float b = ((batch.rgba >> 8) & 0xFF) / 255.0f;
+                float a = ((batch.rgba) & 0xFF) / 255.0f;
+
+                shaderLines_->setVec4("color", glm::vec4(r, g, b, a));
+
+                glBindVertexArray(batch.vao);
+                if (batch.ibo)
+                    glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+                else
+                    glDrawArrays(batch.drawMode, 0, batch.indexCount);
+                glBindVertexArray(0);
+            }
         }
 
-        if (batch.vao == 0)
-        {
-            continue;
-        }
-
-        // ✅ 跳过选中的实体
+        // ────────────────────────────────────────
+        // 2️⃣ 绘制选中状态（高亮）
+        // ────────────────────────────────────────
         if (batch.selected)
         {
-            continue;
+            float sr = ((selectionColor_ >> 24) & 0xFF) / 255.0f;
+            float sg = ((selectionColor_ >> 16) & 0xFF) / 255.0f;
+            float sb = ((selectionColor_ >> 8) & 0xFF) / 255.0f;
+            float sa = ((selectionColor_) & 0xFF) / 255.0f;
+
+            if (isLine)
+            {
+                // 使用加粗线条
+                shader_hover_Lines_->use();
+                shader_hover_Lines_->setMat4("mvp", mvp);
+                shader_hover_Lines_->setVec2("viewport", glm::vec2(vp.width, vp.height));
+                shader_hover_Lines_->setFloat("thickness", selectionStyle_.lineWidth);
+                shader_hover_Lines_->setVec4("color", glm::vec4(sr, sg, sb, sa));
+
+                glBindVertexArray(batch.vao);
+                if (batch.ibo)
+                    glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+                else
+                    glDrawArrays(batch.drawMode, 0, batch.indexCount);
+                glBindVertexArray(0);
+            }
+            else if (isSolid)
+            {
+                // 使用发光实心着色器
+                shader_hover_Solid_->use();
+                shader_hover_Solid_->setMat4("mvp", mvp);
+                // shader_hover_Solid_->setMat4("model", model);
+                // shader_hover_Solid_->setVec3("lightDir", glm::vec3(0.5f, 0.8f, 0.6f));
+                // shader_hover_Solid_->setFloat("glowIntensity", 1.5f); // 选中时更强的发光
+                shader_hover_Solid_->setVec4("color", glm::vec4(sr, sg, sb, sa));
+
+                glBindVertexArray(batch.vao);
+                if (batch.ibo)
+                    glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+                else
+                    glDrawArrays(batch.drawMode, 0, batch.indexCount);
+                glBindVertexArray(0);
+            }
         }
 
-        // 设置颜色
-        float r = ((batch.rgba >> 24) & 0xFF) / 255.0f;
-        float g = ((batch.rgba >> 16) & 0xFF) / 255.0f;
-        float b = ((batch.rgba >> 8) & 0xFF) / 255.0f;
-        float a = ((batch.rgba) & 0xFF) / 255.0f;
-
-        shaderLines_->setVec4("color", glm::vec4(r, g, b, a));
-        glBindVertexArray(batch.vao);
-
-        // 验证绑定
-        GLint vaoBinding;
-        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vaoBinding);
-
-        // 检查 IBO
-        GLint iboBinding;
-        glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &iboBinding);
-        if (batch.ibo != 0)
+        // ────────────────────────────────────────
+        // 3️⃣ 绘制Hover状态（双层效果）
+        // ────────────────────────────────────────
+        if (batch.hovered && !batch.selected)
         {
-            glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+            float gr = ((hoverStyle_.glowColor >> 24) & 0xFF) / 255.0f;
+            float gg = ((hoverStyle_.glowColor >> 16) & 0xFF) / 255.0f;
+            float gb = ((hoverStyle_.glowColor >> 8) & 0xFF) / 255.0f;
+            float ga = ((hoverStyle_.glowColor) & 0xFF) / 255.0f;
+
+            float hr = ((hoverStyle_.color >> 24) & 0xFF) / 255.0f;
+            float hg = ((hoverStyle_.color >> 16) & 0xFF) / 255.0f;
+            float hb = ((hoverStyle_.color >> 8) & 0xFF) / 255.0f;
+            float ha = ((hoverStyle_.color) & 0xFF) / 255.0f;
+
+            if (isLine)
+            {
+                shader_hover_Lines_->use();
+                shader_hover_Lines_->setMat4("mvp", mvp);
+                shader_hover_Lines_->setVec2("viewport", glm::vec2(vp.width, vp.height));
+
+                // 第一层：外发光（更粗、半透明）
+                shader_hover_Lines_->setFloat("thickness", hoverStyle_.lineWidth * 2.5f);
+                shader_hover_Lines_->setVec4("color", glm::vec4(gr, gg, gb, ga));
+
+                glBindVertexArray(batch.vao);
+                if (batch.ibo)
+                    glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+                else
+                    glDrawArrays(batch.drawMode, 0, batch.indexCount);
+                glBindVertexArray(0);
+
+                // 第二层：实体线条（正常粗细、不透明）
+                shader_hover_Lines_->setFloat("thickness", hoverStyle_.lineWidth);
+                shader_hover_Lines_->setVec4("color", glm::vec4(hr, hg, hb, ha));
+
+                glBindVertexArray(batch.vao);
+                if (batch.ibo)
+                    glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+                else
+                    glDrawArrays(batch.drawMode, 0, batch.indexCount);
+                glBindVertexArray(0);
+            }
+            else if (isSolid)
+            {
+                // ✅ 立方体hover效果（超简化版本）
+                shader_hover_Solid_->use();
+                shader_hover_Solid_->setMat4("mvp", mvp);
+
+                // 第一层：外发光（半透明绿色）
+                shader_hover_Solid_->setVec4("color", glm::vec4(gr, gg, gb, ga));
+
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+                glBindVertexArray(batch.vao);
+                if (batch.ibo)
+                    glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+                else
+                    glDrawArrays(batch.drawMode, 0, batch.indexCount);
+                glBindVertexArray(0);
+
+                // 第二层：实体（不透明绿色）
+                shader_hover_Solid_->setVec4("color", glm::vec4(hr, hg, hb, ha));
+
+                glBindVertexArray(batch.vao);
+                if (batch.ibo)
+                    glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
+                else
+                    glDrawArrays(batch.drawMode, 0, batch.indexCount);
+                glBindVertexArray(0);
+
+                glDisable(GL_BLEND);
+            }
         }
-        else
-        {
-            glDrawArrays(batch.drawMode, 0, batch.indexCount);
-        }
-        glBindVertexArray(0);
     }
 
-    // ============================================
-    // 第二遍：Hover 实体（粗线 + 发光）
-    // ============================================
-    shader_hover_Lines_->use();
-    shader_hover_Lines_->setMat4("mvp", mvp);
-
-    // ✅ 设置几何着色器参数
-    shader_hover_Lines_->setVec2("viewport", glm::vec2(vp.width, vp.height));
-    shader_hover_Lines_->setFloat("thickness", hoverStyle_.lineWidth * 2.0f); // 发光层更粗
-    // shader_hover_Lines_->setMat4("projection", vp.proj);
-
-    for (const auto &kv : batches_)
+    // 检查错误
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR)
     {
-        const GpuBatch &batch = kv.second;
-        if (batch.indexCount == 0 || batch.vao == 0)
-            continue;
-        if (!batch.hovered || batch.selected)
-            continue;
-
-        // 第一层：外发光（半透明）
-        float gr = ((hoverStyle_.glowColor >> 24) & 0xFF) / 255.0f;
-        float gg = ((hoverStyle_.glowColor >> 16) & 0xFF) / 255.0f;
-        float gb = ((hoverStyle_.glowColor >> 8) & 0xFF) / 255.0f;
-        float ga = ((hoverStyle_.glowColor) & 0xFF) / 255.0f;
-
-        shader_hover_Lines_->setVec4("color", glm::vec4(gr, gg, gb, ga));
-
-        glBindVertexArray(batch.vao);
-        if (batch.ibo)
-        {
-            glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
-        }
-        else
-        {
-            glDrawArrays(batch.drawMode, 0, batch.indexCount);
-        }
-        glBindVertexArray(0);
-
-        // 第二层：实体（不透明，稍细）
-        shader_hover_Lines_->setFloat("thickness", hoverStyle_.lineWidth);
-
-        float hr = ((hoverStyle_.color >> 24) & 0xFF) / 255.0f;
-        float hg = ((hoverStyle_.color >> 16) & 0xFF) / 255.0f;
-        float hb = ((hoverStyle_.color >> 8) & 0xFF) / 255.0f;
-        float ha = ((hoverStyle_.color) & 0xFF) / 255.0f;
-
-        shader_hover_Lines_->setVec4("color", glm::vec4(hr, hg, hb, ha));
-
-        glBindVertexArray(batch.vao);
-        if (batch.ibo)
-        {
-            glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
-        }
-        else
-        {
-            glDrawArrays(batch.drawMode, 0, batch.indexCount);
-        }
-        glBindVertexArray(0);
-    }
-
-    // 重新激活线条着色器
-    shaderLines_->use();
-
-    // 第二遍：绘制选中的实体（高亮）
-    for (const auto &kv : batches_)
-    {
-        const GpuBatch &batch = kv.second;
-
-        if (batch.indexCount == 0 || batch.vao == 0)
-        {
-            continue;
-        }
-
-        // ✅ 只绘制选中的实体
-        if (!batch.selected)
-        {
-            continue;
-        }
-
-        // ✅ 使用高亮颜色
-        float r = ((selectionColor_ >> 24) & 0xFF) / 255.0f;
-        float g = ((selectionColor_ >> 16) & 0xFF) / 255.0f;
-        float b = ((selectionColor_ >> 8) & 0xFF) / 255.0f;
-        float a = ((selectionColor_) & 0xFF) / 255.0f;
-
-        shaderLines_->setVec4("color", glm::vec4(r, g, b, a));
-
-        // ✅ 可选：增加线宽（需要 OpenGL 支持）
-        // glLineWidth(selectionWidth_);
-
-        glBindVertexArray(batch.vao);
-        if (batch.ibo != 0)
-        {
-            glDrawElements(batch.drawMode, batch.indexCount, GL_UNSIGNED_INT, nullptr);
-        }
-        else
-        {
-            glDrawArrays(batch.drawMode, 0, batch.indexCount);
-        }
-        glBindVertexArray(0);
-
-        // 恢复线宽
-        // glLineWidth(1.0f);
+        qWarning() << "OpenGL error in draw():" << err;
     }
 }
 

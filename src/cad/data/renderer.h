@@ -151,6 +151,7 @@ private:
     // ✅ 使用自定义 Shader
     std::unique_ptr<Shader> shaderLines_;
     std::unique_ptr<Shader> shader_hover_Lines_;
+    std::unique_ptr<Shader> shader_hover_Solid_;
 
     // 每实体一个批（v0.1 简单实现；后续可合批）
     std::unordered_map<EntityId, GpuBatch> batches_;

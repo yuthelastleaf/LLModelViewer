@@ -265,7 +265,7 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
         else
         {
             // 3D 模式：射线拾取
-            auto pickResult = picker_->pick(
+            pickResult = picker_->pick(
                 point.x(), point.y(),
                 *document_,
                 viewportState_,
