@@ -768,26 +768,31 @@ void Renderer::uploadRectangle_(EntityId id, const Rectangle &L, std::uint32_t r
 {
     GpuBatch b{};
 
-    // ✅ 使用视图矩阵提取摄像机的右向量和上向量
-    // 这样矩形会面向摄像机，与屏幕对齐
-    glm::mat4 invView = glm::inverse(vp.view);
-    glm::vec3 cameraRight = glm::normalize(glm::vec3(invView[0]));   // 视图空间的X轴
-    glm::vec3 cameraUp = glm::normalize(glm::vec3(invView[1]));      // 视图空间的Y轴
-    
+    // ✅ p0和p1已经通过射线投影到工作平面上
+    // 工作平面垂直于摄像机视线方向（面向摄像机）
     glm::vec3 p0 = L.p0;
     glm::vec3 p1 = L.p1;
     
-    // 计算矩形的两个边向量（在摄像机对齐的平面上）
-    // p0到p1的向量投影到摄像机的右向量和上向量上
-    glm::vec3 diagonal = p1 - p0;
-    float widthComponent = glm::dot(diagonal, cameraRight);
-    float heightComponent = glm::dot(diagonal, cameraUp);
+    // 1. 从视图矩阵提取摄像机前向量（工作平面的法线）
+    glm::mat4 invView = glm::inverse(vp.view);
+    glm::vec3 cameraFront = -glm::normalize(glm::vec3(invView[2])); // 视图空间的-Z轴即前向量
     
-    // 构建矩形的4个顶点（面向摄像机）
-    glm::vec3 v0 = p0;
-    glm::vec3 v1 = p0 + cameraRight * widthComponent;
-    glm::vec3 v2 = p1;
-    glm::vec3 v3 = p0 + cameraUp * heightComponent;
+    // 2. 计算工作平面的两个正交轴
+    // 使用屏幕对齐的方式：右向量和上向量
+    glm::vec3 planeRight = glm::normalize(glm::vec3(invView[0]));  // 视图空间的X轴（右）
+    glm::vec3 planeUp = glm::normalize(glm::vec3(invView[1]));     // 视图空间的Y轴（上）
+    
+    // 3. 将对角线向量(p0->p1)分解到工作平面的两个轴上
+    glm::vec3 diagonal = p1 - p0;
+    float rightComponent = glm::dot(diagonal, planeRight);  // 在右轴上的分量
+    float upComponent = glm::dot(diagonal, planeUp);        // 在上轴上的分量
+    
+    // 4. 在工作平面上构建矩形的4个顶点
+    // 这样构建的矩形一定在工作平面上，且面向摄像机
+    glm::vec3 v0 = p0;                                      // 左下角
+    glm::vec3 v1 = p0 + planeRight * rightComponent;       // 右下角（沿右轴）
+    glm::vec3 v2 = p1;                                      // 右上角（对角点）
+    glm::vec3 v3 = p0 + planeUp * upComponent;             // 左上角（沿上轴）
 
     // ✅ 使用3D距离计算各边长度
     float edge0 = glm::distance(v0, v1); // 底边

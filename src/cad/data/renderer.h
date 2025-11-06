@@ -140,7 +140,7 @@ public:
 private:
     // 上传 helpers
     void uploadLine_(EntityId id, const Line& L, std::uint32_t rgba);
-    void uploadRectangle_(EntityId id, const Rectangle& L, std::uint32_t rgba);
+    void uploadRectangle_(EntityId id, const Rectangle& L, std::uint32_t rgba, const ViewportState& vp);
     void uploadPolyline_(EntityId id, const Polyline& P, std::uint32_t rgba);
     void uploadCircle_(EntityId id, const Circle& C, std::uint32_t rgba, const ViewportState& vp);
     void uploadArc_(EntityId id, const Arc& A, std::uint32_t rgba, const ViewportState& vp);
