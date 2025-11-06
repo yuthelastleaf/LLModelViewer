@@ -53,6 +53,12 @@ struct ViewportState {
 // 最小顶点结构（仅位置）
 struct PosVertex { glm::vec3 pos; };
 
+// 扩展顶点结构（位置 + 沿线距离，用于虚线着色器）
+struct PosDistVertex { 
+    glm::vec3 pos;      // 3D位置（保持z=0用于2D）
+    float dist = 0.0f;  // 沿线段的累积距离
+};
+
 // GPU 批次（v0.1 每实体一个批次）
 struct GpuBatch {
     GLuint vao = 0, vbo = 0, ibo = 0;
@@ -62,6 +68,7 @@ struct GpuBatch {
     // ✅ v0.2: 选择状态
     bool selected = false;    // 是否被选中
     bool hovered = false;   // ✅ 悬停状态
+    bool doted = false;     // 是否虚线状态
 };
 
 class Renderer : protected QOpenGLFunctions_3_3_Core {
@@ -133,6 +140,7 @@ public:
 private:
     // 上传 helpers
     void uploadLine_(EntityId id, const Line& L, std::uint32_t rgba);
+    void uploadRectangle_(EntityId id, const Rectangle& L, std::uint32_t rgba);
     void uploadPolyline_(EntityId id, const Polyline& P, std::uint32_t rgba);
     void uploadCircle_(EntityId id, const Circle& C, std::uint32_t rgba, const ViewportState& vp);
     void uploadArc_(EntityId id, const Arc& A, std::uint32_t rgba, const ViewportState& vp);
@@ -152,6 +160,7 @@ private:
     std::unique_ptr<Shader> shaderLines_;
     std::unique_ptr<Shader> shader_hover_Lines_;
     std::unique_ptr<Shader> shader_hover_Solid_;
+    std::unique_ptr<Shader> shaderDottedLines_;  // 虚线着色器
 
     // 每实体一个批（v0.1 简单实现；后续可合批）
     std::unordered_map<EntityId, GpuBatch> batches_;

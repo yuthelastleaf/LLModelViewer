@@ -13,7 +13,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 CADDemo::CADDemo(QObject *parent)
-    : Demo(parent), document_(std::make_unique<Document>()), renderer_(std::make_unique<Renderer>()), gridRenderer_(std::make_unique<GridRenderer>()), axisRenderer_(std::make_unique<AxisRenderer>()), showGrid_(true), showAxis_(true), documentDirty_(true), isPanning_(false), cad_mode_(DrawMode::VIEW), cur_draw_(0), selectionManager_(std::make_unique<SelectionManager>(document_.get(), this)), picker_(std::make_unique<Picker>())
+    : Demo(parent), document_(std::make_unique<Document>()), renderer_(std::make_unique<Renderer>())
+    , gridRenderer_(std::make_unique<GridRenderer>()), axisRenderer_(std::make_unique<AxisRenderer>())
+    , showGrid_(true), showAxis_(true), documentDirty_(true), isPanning_(false), cad_mode_(DrawMode::VIEW), cur_draw_(0), selectionManager_(std::make_unique<SelectionManager>(document_.get(), this)), picker_(std::make_unique<Picker>())
+    , cur_select_box_(0), isBoxSelecting_(false)
 {
     // ✅ 默认设置为 2D CAD 俯视图
     camera->SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
@@ -47,6 +50,11 @@ CADDemo::CADDemo(QObject *parent)
     connect(selectionManager_.get(), &SelectionManager::selectionChanged,
             this, [this](int count)
             { emit statusMessage(QString("Selected: %1 entities").arg(count)); });
+    
+    // ✅ 注册实体删除回调，自动清理 GPU 批次
+    document_->setRemoveCallback([this](EntityId id) {
+        renderer_->removeBatch(id);
+    });
 }
 
 CADDemo::~CADDemo()
@@ -110,12 +118,6 @@ void CADDemo::render()
 
     // 绘制文档实体
     renderer_->draw(viewportState_);
-
-    // ✅ v0.2: 绘制框选矩形
-    if (isBoxSelecting_)
-    {
-        drawSelectionBox();
-    }
 }
 
 void CADDemo::cleanup()
@@ -147,6 +149,13 @@ void CADDemo::processKeyPress(CameraMovement qtKey, float deltaTime)
 
 void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
 {
+    // ⭐ 重新计算世界坐标（考虑2D/3D模式和工作平面）
+    if (!getWorldPosition(point, wpoint))
+    {
+        qDebug() << "Failed to project to work plane";
+        return;
+    }
+    
     if (isPanning_)
     {
         return;
@@ -230,6 +239,7 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
     }
     break;
     case DrawMode::SELECT:
+    {
         // 获取键盘修饰键
         Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
 
@@ -251,7 +261,6 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
         if (camera->is2D())
         {
             // 2D 模式：直接使用世界坐标
-            // TODO: 2D 拾取实现
             // ✅ 2D 模式：使用世界坐标直接拾取
             qDebug() << "2D pick at world pos:" << wpoint.x << wpoint.y << wpoint.z;
 
@@ -292,11 +301,6 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
                 selectionManager_->clearSelection();
                 documentDirty_ = true;
             }
-
-            // 开始框选
-            isBoxSelecting_ = true;
-            boxSelectStart_ = point;
-            boxSelectEnd_ = point;
         }
 
         // if (cur_draw_ != 0) {
@@ -315,10 +319,24 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
         // }
         break;
     }
+    case DrawMode::SELECTBOX: {
+        cur_select_box_ = document_->addRectangle(wpoint, wpoint, true, Style::fromRGBA(255, 255, 255, 255), true);
+        isBoxSelecting_ = true;
+        document_->clearAllSelectedFlags();
+        break;
+    }
+    }
 }
 
 void CADDemo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoint, glm::vec3 delta_wpoint)
 {
+    // ⭐ 重新计算世界坐标（考虑2D/3D模式和工作平面）
+    if (!getWorldPosition(point, wpoint))
+    {
+        // 投影失败，使用传入的默认值
+        qDebug() << "Failed to project to work plane";
+    }
+    
     switch (cad_mode_)
     {
     case DrawMode::SELECT:
@@ -403,6 +421,29 @@ void CADDemo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoin
         emit statusMessage("Rectangle tool selected - Click to set first corner");
         qDebug() << "Switched to: Rectangle";
         break;
+    case DrawMode::SELECTBOX:
+        if(isBoxSelecting_) {
+            document_->updateEndLinePoint(cur_select_box_, wpoint);
+
+            // ⭐ 根据相机模式选择 2D 或 3D 框选
+            if (camera->is2D()) {
+                // 2D 模式：直接在屏幕空间框选
+                picker_->selectByBox2D(
+                    cur_select_box_,
+                    *document_,
+                    Picker::BoxSelectMode::INTERSECT);
+            } else {
+                // 3D 模式：在工作平面上使用射线投影框选
+                picker_->selectByBox3D(
+                    cur_select_box_,
+                    *document_,
+                    viewportState_,
+                    *workPlane_,
+                    Picker::BoxSelectMode::INTERSECT);
+            }
+        }
+        emit documentChanged();
+        break;
     }
 }
 
@@ -418,11 +459,20 @@ void CADDemo::processMouseRelease()
     {
         isBoxSelecting_ = false;
 
-        // 获取框选结果
-        int minX = std::min(boxSelectStart_.x(), boxSelectEnd_.x());
-        int maxX = std::max(boxSelectStart_.x(), boxSelectEnd_.x());
-        int minY = std::min(boxSelectStart_.y(), boxSelectEnd_.y());
-        int maxY = std::max(boxSelectStart_.y(), boxSelectEnd_.y());
+        Entity *entity = document_->get(cur_select_box_);
+
+        Rectangle* rect = entity ? std::get_if<Rectangle>(&entity->geom) : nullptr;
+        if (rect)
+        {
+            qDebug() << "Selection box corners:";
+            qDebug() << "  P0:" << rect->p0.x << rect->p0.y << rect->p0.z;
+            qDebug() << "  P1:" << rect->p1.x << rect->p1.y << rect->p1.z;
+        }
+
+        int minX = std::min(rect->p0.x, rect->p1.x);
+        int maxX = std::max(rect->p0.x, rect->p1.x);
+        int minY = std::min(rect->p0.y, rect->p1.y);
+        int maxY = std::max(rect->p0.y, rect->p1.y);
 
         // 判断是否是有效框选（至少拖拽了 5 像素）
         if (std::abs(maxX - minX) > 5 || std::abs(maxY - minY) > 5)
@@ -455,6 +505,10 @@ void CADDemo::processMouseRelease()
                 documentDirty_ = true;
             }
         }
+        entity = nullptr;
+        document_->remove(cur_select_box_);
+        document_->transHoverToSelected();
+        emit documentChanged();
     }
 }
 
@@ -586,7 +640,7 @@ void CADDemo::addTestEntities()
 
     documentDirty_ = true;
     emit documentChanged();
-    emit statusMessage(QString("Added 5 test entities"));
+    emit statusMessage(QString("Added 6 test entities (including dotted rectangle)"));
 }
 
 void CADDemo::clearDocument()
@@ -860,6 +914,8 @@ const char *CADDemo::drawModeToString(DrawMode mode)
         return "Rect";
     case DrawMode::BOX:
         return "Box";
+    case DrawMode::SELECTBOX:
+        return "SelectBox";
     default:
         return "Unknown";
     }
@@ -910,18 +966,27 @@ void CADDemo::deleteSelected()
     emit documentChanged();
 }
 
-void CADDemo::drawSelectionBox()
+// ============================================
+// ✅ v0.3: 坐标转换辅助方法
+// ============================================
+
+bool CADDemo::getWorldPosition(const QPoint& screenPos, glm::vec3& outWorldPos) const
 {
-    // 将屏幕坐标转为世界坐标
-    glm::vec3 p0 = viewportState_.screenToWorld(boxSelectStart_.x(), boxSelectStart_.y());
-    glm::vec3 p1 = viewportState_.screenToWorld(boxSelectEnd_.x(), boxSelectStart_.y());
-    glm::vec3 p2 = viewportState_.screenToWorld(boxSelectEnd_.x(), boxSelectEnd_.y());
-    glm::vec3 p3 = viewportState_.screenToWorld(boxSelectStart_.x(), boxSelectEnd_.y());
-
-    // 绘制矩形边框（虚线效果可以后续添加）
-    std::vector<glm::vec3> boxLines = {
-        p0, p1, p1, p2, p2, p3, p3, p0};
-
-    std::uint32_t boxColor = 0x00FF00FF; // 绿色
-    renderer_->drawLineSegments(boxLines, boxColor, viewportState_);
+    bool flag = true;
+    if (!camera->is2D())
+    {
+        // 3D 模式：射线与工作平面求交
+        Ray ray = Ray::fromScreen(
+            screenPos.x(), screenPos.y(),
+            viewportState_.width, viewportState_.height,
+            viewportState_.view, viewportState_.proj
+        );
+        
+        flag = workPlane_->rayIntersection(
+            ray.getOrigin(),
+            ray.getDirection(),
+            outWorldPos
+        );
+    }
+    return flag;
 }

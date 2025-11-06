@@ -1,4 +1,5 @@
 #include "Picker.h"
+#include "../../base/util/WorkPlane.h"
 #include <QDebug>
 #include <algorithm>
 #include <cmath>
@@ -740,4 +741,737 @@ float Picker::pointToSegmentDistance(
     }
     
     return glm::distance(p, closest);
+}
+
+// ============================================
+// 2D 框选功能实现
+// ============================================
+
+std::vector<EntityId> Picker::selectByBox2D(
+    EntityId boxEntityId,
+    Document& document,
+    BoxSelectMode mode) const {
+    
+    // 1. 获取矩形框实体
+    const Entity* boxEntity = document.get(boxEntityId);
+    if (!boxEntity || boxEntity->type != EntityType::Rectangle) {
+        qDebug() << "Invalid box entity ID or not a Rectangle";
+        return {};
+    }
+    
+    const Rectangle* rect = std::get_if<Rectangle>(&boxEntity->geom);
+    if (!rect) {
+        return {};
+    }
+    
+    // 2. 计算矩形框的边界（2D，忽略 Z）
+    float minX = std::min(rect->p0.x, rect->p1.x);
+    float maxX = std::max(rect->p0.x, rect->p1.x);
+    float minY = std::min(rect->p0.y, rect->p1.y);
+    float maxY = std::max(rect->p0.y, rect->p1.y);
+    
+    std::vector<EntityId> selectedIds;
+    
+    // 3. 遍历所有实体，检查是否与矩形框相交或被包含
+    for (auto* entity : document.all()) {
+        if (!entity || entity->id == boxEntityId) {
+            continue;  // 跳过矩形框自己
+        }
+        
+        bool shouldSelect = false;
+        
+        switch (entity->type) {
+            case EntityType::Line: {
+                if (auto* line = std::get_if<Line>(&entity->geom)) {
+                    shouldSelect = checkLineInBox2D(*line, minX, minY, maxX, maxY, mode);
+                }
+                break;
+            }
+            
+            case EntityType::Polyline: {
+                if (auto* polyline = std::get_if<Polyline>(&entity->geom)) {
+                    shouldSelect = checkPolylineInBox2D(*polyline, minX, minY, maxX, maxY, mode);
+                }
+                break;
+            }
+            
+            case EntityType::Rectangle: {
+                if (auto* otherRect = std::get_if<Rectangle>(&entity->geom)) {
+                    shouldSelect = checkRectangleInBox2D(*otherRect, minX, minY, maxX, maxY, mode);
+                }
+                break;
+            }
+            
+            case EntityType::Circle: {
+                if (auto* circle = std::get_if<Circle>(&entity->geom)) {
+                    shouldSelect = checkCircleInBox2D(*circle, minX, minY, maxX, maxY, mode);
+                }
+                break;
+            }
+            
+            case EntityType::Arc: {
+                if (auto* arc = std::get_if<Arc>(&entity->geom)) {
+                    shouldSelect = checkArcInBox2D(*arc, minX, minY, maxX, maxY, mode);
+                }
+                break;
+            }
+            
+            case EntityType::Box: {
+                if (auto* box = std::get_if<Box>(&entity->geom)) {
+                    shouldSelect = checkBox3DInBox2D(*box, minX, minY, maxX, maxY, mode);
+                }
+                break;
+            }
+        }
+        
+        // 4. 设置 hover 状态
+        if (shouldSelect) {
+            if (!entity->hovered) {
+                entity->hovered = true;
+                entity->dirty = true;  // 标记需要更新渲染状态
+            }
+            selectedIds.push_back(entity->id);
+        } else {
+            if (entity->hovered) {
+                entity->hovered = false;
+                entity->dirty = true;  // ⭐ 关键：取消 hover 时也要标记为 dirty
+            }
+        }
+    }
+    
+    qDebug() << "Box selection found" << selectedIds.size() << "entities";
+    return selectedIds;
+}
+
+// ============================================
+// 2D 框选几何检测实现
+// ============================================
+
+bool Picker::isPoint2DInBox(
+    float px, float py,
+    float minX, float minY, float maxX, float maxY) const {
+    return px >= minX && px <= maxX && py >= minY && py <= maxY;
+}
+
+bool Picker::checkLineInBox2D(
+    const Line& line,
+    float minX, float minY, float maxX, float maxY,
+    BoxSelectMode mode) const {
+    
+    bool p0In = isPoint2DInBox(line.p0.x, line.p0.y, minX, minY, maxX, maxY);
+    bool p1In = isPoint2DInBox(line.p1.x, line.p1.y, minX, minY, maxX, maxY);
+    
+    if (mode == BoxSelectMode::CONTAIN) {
+        // 完全包含：两个端点都在框内
+        return p0In && p1In;
+    } else {
+        // 相交：任一端点在框内，或线段与框边界相交
+        return p0In || p1In || 
+               lineSegmentIntersectsBox2D(line.p0.x, line.p0.y, line.p1.x, line.p1.y,
+                                         minX, minY, maxX, maxY);
+    }
+}
+
+bool Picker::checkPolylineInBox2D(
+    const Polyline& polyline,
+    float minX, float minY, float maxX, float maxY,
+    BoxSelectMode mode) const {
+    
+    if (polyline.pts.empty()) {
+        return false;
+    }
+    
+    if (mode == BoxSelectMode::CONTAIN) {
+        // 完全包含：所有点都在框内
+        for (const auto& pt : polyline.pts) {
+            if (!isPoint2DInBox(pt.x, pt.y, minX, minY, maxX, maxY)) {
+                return false;
+            }
+        }
+        return true;
+        
+    } else {
+        // 相交：任意点在框内，或任意线段与框相交
+        for (const auto& pt : polyline.pts) {
+            if (isPoint2DInBox(pt.x, pt.y, minX, minY, maxX, maxY)) {
+                return true;
+            }
+        }
+        
+        // 检查线段相交
+        for (size_t i = 0; i < polyline.pts.size() - 1; ++i) {
+            const auto& p0 = polyline.pts[i];
+            const auto& p1 = polyline.pts[i + 1];
+            if (lineSegmentIntersectsBox2D(p0.x, p0.y, p1.x, p1.y,
+                                          minX, minY, maxX, maxY)) {
+                return true;
+            }
+        }
+        
+        // 闭合多段线需要检查首尾连接
+        if (polyline.closed && polyline.pts.size() > 2) {
+            const auto& p0 = polyline.pts.back();
+            const auto& p1 = polyline.pts.front();
+            if (lineSegmentIntersectsBox2D(p0.x, p0.y, p1.x, p1.y,
+                                          minX, minY, maxX, maxY)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+}
+
+bool Picker::checkRectangleInBox2D(
+    const Rectangle& rect,
+    float minX, float minY, float maxX, float maxY,
+    BoxSelectMode mode) const {
+    
+    float rectMinX = std::min(rect.p0.x, rect.p1.x);
+    float rectMaxX = std::max(rect.p0.x, rect.p1.x);
+    float rectMinY = std::min(rect.p0.y, rect.p1.y);
+    float rectMaxY = std::max(rect.p0.y, rect.p1.y);
+    
+    if (mode == BoxSelectMode::CONTAIN) {
+        // 完全包含：矩形的所有角都在框内
+        return rectMinX >= minX && rectMaxX <= maxX &&
+               rectMinY >= minY && rectMaxY <= maxY;
+    } else {
+        // 相交：两个矩形的 AABB 相交
+        return !(rectMaxX < minX || rectMinX > maxX ||
+                 rectMaxY < minY || rectMinY > maxY);
+    }
+}
+
+bool Picker::checkCircleInBox2D(
+    const Circle& circle,
+    float minX, float minY, float maxX, float maxY,
+    BoxSelectMode mode) const {
+    
+    float cx = circle.c.x;
+    float cy = circle.c.y;
+    float r = circle.r;
+    
+    if (mode == BoxSelectMode::CONTAIN) {
+        // 完全包含：圆完全在框内（包括边界）
+        return (cx - r >= minX) && (cx + r <= maxX) &&
+               (cy - r >= minY) && (cy + r <= maxY);
+    } else {
+        // 相交：圆与矩形相交
+        // 找到矩形上距离圆心最近的点
+        float closestX = std::clamp(cx, minX, maxX);
+        float closestY = std::clamp(cy, minY, maxY);
+        
+        // 计算距离
+        float dx = cx - closestX;
+        float dy = cy - closestY;
+        float distSq = dx * dx + dy * dy;
+        
+        // 如果距离小于半径，则相交
+        return distSq <= (r * r);
+    }
+}
+
+bool Picker::checkArcInBox2D(
+    const Arc& arc,
+    float minX, float minY, float maxX, float maxY,
+    BoxSelectMode mode) const {
+    
+    // 简化实现：检查圆弧的端点和采样点
+    float cx = arc.c.x;
+    float cy = arc.c.y;
+    float r = arc.r;
+    
+    // 计算圆弧的两个端点
+    float x0 = cx + r * std::cos(arc.a0);
+    float y0 = cy + r * std::sin(arc.a0);
+    float x1 = cx + r * std::cos(arc.a1);
+    float y1 = cy + r * std::sin(arc.a1);
+    
+    bool p0In = isPoint2DInBox(x0, y0, minX, minY, maxX, maxY);
+    bool p1In = isPoint2DInBox(x1, y1, minX, minY, maxX, maxY);
+    
+    if (mode == BoxSelectMode::CONTAIN) {
+        // 完全包含：采样多个点检查是否都在框内
+        const int samples = 16;
+        float angleRange = arc.a1 - arc.a0;
+        if (angleRange < 0) angleRange += 2.0f * glm::pi<float>();
+        
+        for (int i = 0; i <= samples; ++i) {
+            float t = float(i) / samples;
+            float angle = arc.a0 + t * angleRange;
+            float px = cx + r * std::cos(angle);
+            float py = cy + r * std::sin(angle);
+            
+            if (!isPoint2DInBox(px, py, minX, minY, maxX, maxY)) {
+                return false;
+            }
+        }
+        return true;
+        
+    } else {
+        // 相交：端点在框内，或圆弧与框边界相交
+        if (p0In || p1In) {
+            return true;
+        }
+        
+        // 简化检查：采样多个点
+        const int samples = 16;
+        float angleRange = arc.a1 - arc.a0;
+        if (angleRange < 0) angleRange += 2.0f * glm::pi<float>();
+        
+        for (int i = 0; i <= samples; ++i) {
+            float t = float(i) / samples;
+            float angle = arc.a0 + t * angleRange;
+            float px = cx + r * std::cos(angle);
+            float py = cy + r * std::sin(angle);
+            
+            if (isPoint2DInBox(px, py, minX, minY, maxX, maxY)) {
+                return true;
+            }
+        }
+        
+        // 还需要检查圆弧是否穿过矩形（矩形完全在圆弧内部的情况）
+        // 简化：检查矩形的四个角到圆心的距离
+        bool boxCenterIn = isPoint2DInBox(cx, cy, minX, minY, maxX, maxY);
+        if (boxCenterIn && r > 0) {
+            // 圆心在框内，可能相交
+            return true;
+        }
+        
+        return false;
+    }
+}
+
+bool Picker::checkBox3DInBox2D(
+    const Box& box,
+    float minX, float minY, float maxX, float maxY,
+    BoxSelectMode mode) const {
+    
+    // 3D 立方体投影到 2D：检查中心点和 8 个顶点的 XY 坐标
+    float half = box.size * 0.5f;
+    glm::vec3 c = box.center;
+    
+    // 8 个顶点
+    glm::vec3 vertices[8] = {
+        c + glm::vec3(-half, -half, -half),
+        c + glm::vec3( half, -half, -half),
+        c + glm::vec3( half,  half, -half),
+        c + glm::vec3(-half,  half, -half),
+        c + glm::vec3(-half, -half,  half),
+        c + glm::vec3( half, -half,  half),
+        c + glm::vec3( half,  half,  half),
+        c + glm::vec3(-half,  half,  half),
+    };
+    
+    if (mode == BoxSelectMode::CONTAIN) {
+        // 完全包含：所有顶点的 XY 坐标都在框内
+        for (int i = 0; i < 8; ++i) {
+            if (!isPoint2DInBox(vertices[i].x, vertices[i].y, minX, minY, maxX, maxY)) {
+                return false;
+            }
+        }
+        return true;
+        
+    } else {
+        // 相交：任意顶点在框内
+        for (int i = 0; i < 8; ++i) {
+            if (isPoint2DInBox(vertices[i].x, vertices[i].y, minX, minY, maxX, maxY)) {
+                return true;
+            }
+        }
+        
+        // 或者立方体的边与框相交（简化：检查投影后的 AABB）
+        float boxMinX = vertices[0].x, boxMaxX = vertices[0].x;
+        float boxMinY = vertices[0].y, boxMaxY = vertices[0].y;
+        
+        for (int i = 1; i < 8; ++i) {
+            boxMinX = std::min(boxMinX, vertices[i].x);
+            boxMaxX = std::max(boxMaxX, vertices[i].x);
+            boxMinY = std::min(boxMinY, vertices[i].y);
+            boxMaxY = std::max(boxMaxY, vertices[i].y);
+        }
+        
+        // AABB 相交检测
+        return !(boxMaxX < minX || boxMinX > maxX ||
+                 boxMaxY < minY || boxMinY > maxY);
+    }
+}
+
+bool Picker::lineSegmentIntersectsBox2D(
+    float x0, float y0, float x1, float y1,
+    float minX, float minY, float maxX, float maxY) const {
+    
+    // Cohen-Sutherland 线段裁剪算法
+    // 编码：左(0001), 右(0010), 下(0100), 上(1000)
+    
+    auto computeCode = [&](float x, float y) -> int {
+        int code = 0;
+        if (x < minX) code |= 1;      // 左
+        if (x > maxX) code |= 2;      // 右
+        if (y < minY) code |= 4;      // 下
+        if (y > maxY) code |= 8;      // 上
+        return code;
+    };
+    
+    int code0 = computeCode(x0, y0);
+    int code1 = computeCode(x1, y1);
+    
+    // 简化判断
+    if (code0 == 0 || code1 == 0) {
+        // 至少一个端点在框内
+        return true;
+    }
+    
+    if ((code0 & code1) != 0) {
+        // 两个端点在框的同一侧外面
+        return false;
+    }
+    
+    // 可能相交，需要详细计算（这里简化为返回 true）
+    // 完整实现应该进行线段裁剪计算
+    return true;
+}
+
+// ============================================
+// 3D 框选功能实现（基于工作平面和射线）
+// ============================================
+
+std::vector<EntityId> Picker::selectByBox3D(
+    EntityId boxEntityId,
+    Document& document,
+    const ViewportState& vp,
+    const WorkPlane& workPlane,
+    BoxSelectMode mode) const {
+    
+    // 1. 获取矩形框实体
+    const Entity* boxEntity = document.get(boxEntityId);
+    if (!boxEntity || boxEntity->type != EntityType::Rectangle) {
+        qDebug() << "Invalid box entity ID or not a Rectangle";
+        return {};
+    }
+    
+    const Rectangle* rect = std::get_if<Rectangle>(&boxEntity->geom);
+    if (!rect) {
+        return {};
+    }
+    
+    // 2. 计算框的四个角点（世界坐标）
+    glm::vec3 boxCorners[4] = {
+        rect->p0,                                          // 左下
+        glm::vec3(rect->p1.x, rect->p0.y, rect->p0.z),   // 右下
+        rect->p1,                                          // 右上
+        glm::vec3(rect->p0.x, rect->p1.y, rect->p0.z)    // 左上
+    };
+    
+    qDebug() << "3D Box selection corners:";
+    for (int i = 0; i < 4; ++i) {
+        qDebug() << "  Corner" << i << ":" << boxCorners[i].x << boxCorners[i].y << boxCorners[i].z;
+    }
+    
+    std::vector<EntityId> selectedIds;
+    
+    // 3. 遍历所有实体，使用射线投影方式检测
+    for (auto* entity : document.all()) {
+        if (!entity || entity->id == boxEntityId) {
+            continue;  // 跳过矩形框自己
+        }
+        
+        bool shouldSelect = checkEntityInBox3D(*entity, boxCorners, vp, mode);
+        
+        // 4. 设置 hover 状态
+        if (shouldSelect) {
+            if (!entity->hovered) {
+                entity->hovered = true;
+                entity->dirty = true;
+            }
+            selectedIds.push_back(entity->id);
+        } else {
+            if (entity->hovered) {
+                entity->hovered = false;
+                entity->dirty = true;
+            }
+        }
+    }
+    
+    qDebug() << "3D Box selection found" << selectedIds.size() << "entities";
+    return selectedIds;
+}
+
+// ============================================
+// 3D 框选几何检测实现
+// ============================================
+
+bool Picker::checkEntityInBox3D(
+    const Entity& entity,
+    const glm::vec3 boxCorners[4],
+    const ViewportState& vp,
+    BoxSelectMode mode) const {
+    
+    // 策略：
+    // 1. INTERSECT 模式：从框的边界和内部发射射线网格，只要有任意射线击中实体即选中
+    // 2. CONTAIN 模式：检查实体的关键点（顶点、中心等）是否都在框内
+    
+    if (mode == BoxSelectMode::CONTAIN) {
+        // 完全包含模式：检查实体的所有关键点是否都在框的投影范围内
+        // 这里简化实现：只检查端点/中心点
+        
+        std::vector<glm::vec3> keyPoints;
+        
+        switch (entity.type) {
+            case EntityType::Line: {
+                if (auto* line = std::get_if<Line>(&entity.geom)) {
+                    keyPoints = {line->p0, line->p1};
+                }
+                break;
+            }
+            
+            case EntityType::Polyline: {
+                if (auto* polyline = std::get_if<Polyline>(&entity.geom)) {
+                    keyPoints = polyline->pts;
+                }
+                break;
+            }
+            
+            case EntityType::Rectangle: {
+                if (auto* r = std::get_if<Rectangle>(&entity.geom)) {
+                    keyPoints = {
+                        r->p0,
+                        glm::vec3(r->p1.x, r->p0.y, r->p0.z),
+                        r->p1,
+                        glm::vec3(r->p0.x, r->p1.y, r->p0.z)
+                    };
+                }
+                break;
+            }
+            
+            case EntityType::Circle: {
+                if (auto* circle = std::get_if<Circle>(&entity.geom)) {
+                    // 简化：只检查圆心和四个基本方向的点
+                    keyPoints = {
+                        circle->c,
+                        circle->c + glm::vec3(circle->r, 0, 0),
+                        circle->c + glm::vec3(-circle->r, 0, 0),
+                        circle->c + glm::vec3(0, circle->r, 0),
+                        circle->c + glm::vec3(0, -circle->r, 0)
+                    };
+                }
+                break;
+            }
+            
+            case EntityType::Arc: {
+                if (auto* arc = std::get_if<Arc>(&entity.geom)) {
+                    keyPoints = {arc->c};
+                }
+                break;
+            }
+            
+            case EntityType::Box: {
+                if (auto* box = std::get_if<Box>(&entity.geom)) {
+                    float half = box->size * 0.5f;
+                    keyPoints = {
+                        box->center + glm::vec3(-half, -half, -half),
+                        box->center + glm::vec3( half, -half, -half),
+                        box->center + glm::vec3( half,  half, -half),
+                        box->center + glm::vec3(-half,  half, -half),
+                        box->center + glm::vec3(-half, -half,  half),
+                        box->center + glm::vec3( half, -half,  half),
+                        box->center + glm::vec3( half,  half,  half),
+                        box->center + glm::vec3(-half,  half,  half),
+                    };
+                }
+                break;
+            }
+        }
+        
+        // 检查所有关键点是否都在屏幕空间的框内
+        if (keyPoints.empty()) return false;
+        
+        // 计算框在屏幕空间的边界
+        glm::vec2 screenCorners[4];
+        for (int i = 0; i < 4; ++i) {
+            screenCorners[i] = vp.worldToScreen(boxCorners[i]);
+        }
+        
+        float minX = std::min({screenCorners[0].x, screenCorners[1].x, screenCorners[2].x, screenCorners[3].x});
+        float maxX = std::max({screenCorners[0].x, screenCorners[1].x, screenCorners[2].x, screenCorners[3].x});
+        float minY = std::min({screenCorners[0].y, screenCorners[1].y, screenCorners[2].y, screenCorners[3].y});
+        float maxY = std::max({screenCorners[0].y, screenCorners[1].y, screenCorners[2].y, screenCorners[3].y});
+        
+        for (const auto& pt : keyPoints) {
+            glm::vec2 screenPt = vp.worldToScreen(pt);
+            if (screenPt.x < minX || screenPt.x > maxX || 
+                screenPt.y < minY || screenPt.y > maxY) {
+                return false;  // 有点在框外，不满足完全包含
+            }
+        }
+        
+        return true;  // 所有点都在框内
+        
+    } else {
+        // 相交模式：生成射线网格，检查是否有射线击中实体
+        std::vector<Ray> rays = generateBoxRays(boxCorners, vp, 8);
+        
+        qDebug() << "Generated" << rays.size() << "rays for entity" << entity.id;
+        
+        // 对每条射线测试是否与实体相交
+        for (const auto& ray : rays) {
+            glm::vec3 hitPoint;
+            bool hit = false;
+            
+            switch (entity.type) {
+                case EntityType::Line: {
+                    if (auto* line = std::get_if<Line>(&entity.geom)) {
+                        hit = intersectLine(ray, *line, hitPoint, 0.1f);
+                    }
+                    break;
+                }
+                
+                case EntityType::Polyline: {
+                    if (auto* polyline = std::get_if<Polyline>(&entity.geom)) {
+                        hit = intersectPolyline(ray, *polyline, hitPoint, 0.1f);
+                    }
+                    break;
+                }
+                
+                case EntityType::Circle: {
+                    if (auto* circle = std::get_if<Circle>(&entity.geom)) {
+                        hit = intersectCircle(ray, *circle, hitPoint, 0.1f);
+                    }
+                    break;
+                }
+                
+                case EntityType::Arc: {
+                    if (auto* arc = std::get_if<Arc>(&entity.geom)) {
+                        hit = intersectArc(ray, *arc, hitPoint, 0.1f);
+                    }
+                    break;
+                }
+                
+                case EntityType::Box: {
+                    if (auto* box = std::get_if<Box>(&entity.geom)) {
+                        hit = intersectBox(ray, *box, hitPoint);
+                    }
+                    break;
+                }
+                
+                case EntityType::Rectangle: {
+                    // 矩形暂时当作4条线段处理
+                    if (auto* r = std::get_if<Rectangle>(&entity.geom)) {
+                        Line edges[4] = {
+                            {r->p0, glm::vec3(r->p1.x, r->p0.y, r->p0.z)},
+                            {glm::vec3(r->p1.x, r->p0.y, r->p0.z), r->p1},
+                            {r->p1, glm::vec3(r->p0.x, r->p1.y, r->p0.z)},
+                            {glm::vec3(r->p0.x, r->p1.y, r->p0.z), r->p0}
+                        };
+                        for (int i = 0; i < 4; ++i) {
+                            if (intersectLine(ray, edges[i], hitPoint, 0.1f)) {
+                                hit = true;
+                                break;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (hit) {
+                qDebug() << "  Ray hit entity" << entity.id;
+                return true;  // 只要有一条射线击中就算相交
+            }
+        }
+        
+        return false;  // 没有射线击中
+    }
+}
+
+std::vector<Ray> Picker::generateBoxRays(
+    const glm::vec3 boxCorners[4],
+    const ViewportState& vp,
+    int sampleCount) const {
+    
+    std::vector<Ray> rays;
+    
+    // 1. 从四个角点发射射线
+    for (int i = 0; i < 4; ++i) {
+        glm::vec2 screenPos = vp.worldToScreen(boxCorners[i]);
+        Ray ray = Ray::fromScreen(
+            static_cast<int>(screenPos.x),
+            static_cast<int>(screenPos.y),
+            vp.width, vp.height,
+            vp.view, vp.proj
+        );
+        rays.push_back(ray);
+    }
+    
+    // 2. 从框的四条边上采样点发射射线
+    for (int edge = 0; edge < 4; ++edge) {
+        int nextEdge = (edge + 1) % 4;
+        
+        for (int sample = 1; sample < sampleCount; ++sample) {
+            float t = float(sample) / float(sampleCount);
+            glm::vec3 samplePoint = glm::mix(boxCorners[edge], boxCorners[nextEdge], t);
+            
+            glm::vec2 screenPos = vp.worldToScreen(samplePoint);
+            Ray ray = Ray::fromScreen(
+                static_cast<int>(screenPos.x),
+                static_cast<int>(screenPos.y),
+                vp.width, vp.height,
+                vp.view, vp.proj
+            );
+            rays.push_back(ray);
+        }
+    }
+    
+    // 3. 从框内部采样点发射射线（网格）
+    for (int i = 1; i < sampleCount; ++i) {
+        for (int j = 1; j < sampleCount; ++j) {
+            float u = float(i) / float(sampleCount);
+            float v = float(j) / float(sampleCount);
+            
+            // 双线性插值计算内部点
+            glm::vec3 bottom = glm::mix(boxCorners[0], boxCorners[1], u);
+            glm::vec3 top = glm::mix(boxCorners[3], boxCorners[2], u);
+            glm::vec3 samplePoint = glm::mix(bottom, top, v);
+            
+            glm::vec2 screenPos = vp.worldToScreen(samplePoint);
+            Ray ray = Ray::fromScreen(
+                static_cast<int>(screenPos.x),
+                static_cast<int>(screenPos.y),
+                vp.width, vp.height,
+                vp.view, vp.proj
+            );
+            rays.push_back(ray);
+        }
+    }
+    
+    qDebug() << "Generated" << rays.size() << "rays (" 
+             << "4 corners + " << (sampleCount-1)*4 << " edges + " 
+             << (sampleCount-1)*(sampleCount-1) << " interior)";
+    
+    return rays;
+}
+
+bool Picker::isPointInBox3D(
+    const glm::vec3& point,
+    const glm::vec3 boxCorners[4],
+    const WorkPlane& workPlane) const {
+    
+    // 将点和框都转换到工作平面的局部坐标系
+    glm::vec2 localPoint = workPlane.worldToLocal(point);
+    
+    glm::vec2 localCorners[4];
+    for (int i = 0; i < 4; ++i) {
+        localCorners[i] = workPlane.worldToLocal(boxCorners[i]);
+    }
+    
+    // 计算框的边界
+    float minX = std::min({localCorners[0].x, localCorners[1].x, localCorners[2].x, localCorners[3].x});
+    float maxX = std::max({localCorners[0].x, localCorners[1].x, localCorners[2].x, localCorners[3].x});
+    float minY = std::min({localCorners[0].y, localCorners[1].y, localCorners[2].y, localCorners[3].y});
+    float maxY = std::max({localCorners[0].y, localCorners[1].y, localCorners[2].y, localCorners[3].y});
+    
+    // 检查点是否在边界内
+    return localPoint.x >= minX && localPoint.x <= maxX &&
+           localPoint.y >= minY && localPoint.y <= maxY;
 }

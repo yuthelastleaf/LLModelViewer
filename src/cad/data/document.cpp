@@ -30,7 +30,11 @@ EntityId Document::add(Entity e) {
 }
 
 bool Document::remove(EntityId id) {
-    return map_.erase(id) > 0;
+    auto it = map_.find(id);
+    if (it == map_.end()) return false;
+    map_.erase(it);
+    if (onRemove_) onRemove_(id);  // 通知监听者
+    return true;
 }
 
 void Document::clear() {
@@ -60,6 +64,31 @@ void Document::clearAllDirtyFlags() {
     }
 }
 
+void Document::clearAllSelectedFlags()
+{
+    for (auto& kv : map_) {
+        kv.second.selected = false;
+    }
+}
+
+void Document::clearAllHoverFlags()
+{
+    for (auto& kv : map_) {
+        kv.second.hovered = false;
+    }
+}
+
+void Document::transHoverToSelected()
+{
+    for (auto& kv : map_) {
+        if (kv.second.hovered) {
+            kv.second.selected = true;
+            kv.second.hovered = false;
+            kv.second.dirty = true; // 标记为脏以更新渲染状态
+        }
+    }
+}
+
 bool Document::updateEndLinePoint(EntityId id, glm::vec3 linepos)
 {
     bool flag = false;
@@ -71,6 +100,12 @@ bool Document::updateEndLinePoint(EntityId id, glm::vec3 linepos)
         // ✅ 推荐：检查类型后修改
         if (auto* line = std::get_if<Line>(&it->second.geom)) {
             line->p1 = linepos;
+        }
+        it->second.dirty = true;
+        flag = true;
+    } else if(it->second.type == EntityType::Rectangle) {
+        if (auto* rect = std::get_if<Rectangle>(&it->second.geom)) {
+            rect->p1 = linepos;
         }
         it->second.dirty = true;
         flag = true;
@@ -92,6 +127,16 @@ EntityId Document::addPolyline(const std::vector<glm::vec3>& pts, bool closed, c
     e.type = EntityType::Polyline;
     e.style = s;
     e.geom = Polyline{pts, closed};
+    return add(std::move(e));
+}
+
+EntityId Document::addRectangle(const glm::vec3 &a, const glm::vec3 &b, bool closed, const Style &s, bool doted)
+{
+    Entity e;
+    e.type = EntityType::Rectangle;
+    e.style = s;
+    e.geom = Rectangle{a, b};
+    e.dot = doted;
     return add(std::move(e));
 }
 

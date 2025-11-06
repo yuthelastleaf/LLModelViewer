@@ -127,6 +127,42 @@ public:
         const Document& document,
         const ViewportState& vp,
         float pixelThreshold = 5.0f) const;
+    
+    // ============================================
+    // ✅ v0.2: 2D 框选功能
+    // ============================================
+    
+    /**
+     * 2D 框选：根据矩形框实体ID，找到所有相交或被包含的实体并设置 hover 状态
+     * @param boxEntityId 矩形框实体的 ID
+     * @param document 文档（可修改实体的 hovered 状态）
+     * @param mode 选择模式（INTERSECT=相交, CONTAIN=完全包含）
+     * @return 被选中的实体 ID 列表
+     */
+    std::vector<EntityId> selectByBox2D(
+        EntityId boxEntityId,
+        Document& document,
+        BoxSelectMode mode = BoxSelectMode::INTERSECT) const;
+    
+    // ============================================
+    // ✅ v0.3: 3D 框选功能（基于工作平面和射线）
+    // ============================================
+    
+    /**
+     * 3D 框选：在工作平面上根据矩形框实体ID，使用射线投影方式检测实体
+     * @param boxEntityId 矩形框实体的 ID（在工作平面上绘制的框）
+     * @param document 文档（可修改实体的 hovered 状态）
+     * @param vp 视口状态
+     * @param workPlane 工作平面（框所在的平面）
+     * @param mode 选择模式（INTERSECT=相交, CONTAIN=完全包含）
+     * @return 被选中的实体 ID 列表
+     */
+    std::vector<EntityId> selectByBox3D(
+        EntityId boxEntityId,
+        Document& document,
+        const ViewportState& vp,
+        const class WorkPlane& workPlane,
+        BoxSelectMode mode = BoxSelectMode::INTERSECT) const;
 
 private:
 
@@ -240,4 +276,92 @@ private:
         const glm::vec3& p0, const glm::vec3& p1,
         int minX, int minY, int maxX, int maxY,
         const ViewportState& vp) const;
+    
+    // ============================================
+    // 2D 框选几何检测辅助方法
+    // ============================================
+    
+    // 检查 2D 点是否在矩形框内
+    bool isPoint2DInBox(
+        float px, float py,
+        float minX, float minY, float maxX, float maxY) const;
+    
+    // 检查 2D 线段是否与矩形框相交或被包含
+    bool checkLineInBox2D(
+        const Line& line,
+        float minX, float minY, float maxX, float maxY,
+        BoxSelectMode mode) const;
+    
+    // 检查多段线是否与矩形框相交或被包含
+    bool checkPolylineInBox2D(
+        const Polyline& polyline,
+        float minX, float minY, float maxX, float maxY,
+        BoxSelectMode mode) const;
+    
+    // 检查矩形是否与矩形框相交或被包含
+    bool checkRectangleInBox2D(
+        const Rectangle& rect,
+        float minX, float minY, float maxX, float maxY,
+        BoxSelectMode mode) const;
+    
+    // 检查圆是否与矩形框相交或被包含
+    bool checkCircleInBox2D(
+        const Circle& circle,
+        float minX, float minY, float maxX, float maxY,
+        BoxSelectMode mode) const;
+    
+    // 检查圆弧是否与矩形框相交或被包含
+    bool checkArcInBox2D(
+        const Arc& arc,
+        float minX, float minY, float maxX, float maxY,
+        BoxSelectMode mode) const;
+    
+    // 检查 3D 立方体是否与矩形框相交或被包含
+    bool checkBox3DInBox2D(
+        const Box& box,
+        float minX, float minY, float maxX, float maxY,
+        BoxSelectMode mode) const;
+    
+    // 检查 2D 线段是否与矩形框相交
+    bool lineSegmentIntersectsBox2D(
+        float x0, float y0, float x1, float y1,
+        float minX, float minY, float maxX, float maxY) const;
+    
+    // ============================================
+    // 3D 框选几何检测辅助方法（基于射线投影）
+    // ============================================
+    
+    /**
+     * 检查实体是否被3D选择框选中（使用射线投影方式）
+     * 原理：从框的四个角和若干采样点发射射线，检查射线是否与实体相交
+     */
+    bool checkEntityInBox3D(
+        const Entity& entity,
+        const glm::vec3 boxCorners[4],  // 框在工作平面上的四个角点（世界坐标）
+        const ViewportState& vp,
+        BoxSelectMode mode) const;
+    
+    /**
+     * 生成框选区域的射线网格（从框的边界和内部采样点发射射线）
+     * @param boxCorners 框的四个角点（世界坐标）
+     * @param vp 视口状态
+     * @param sampleCount 每条边的采样数量
+     * @return 射线列表
+     */
+    std::vector<Ray> generateBoxRays(
+        const glm::vec3 boxCorners[4],
+        const ViewportState& vp,
+        int sampleCount = 10) const;
+    
+    /**
+     * 检查点是否在3D框内（工作平面局部坐标系）
+     * @param point 世界坐标点
+     * @param boxCorners 框的四个角点（世界坐标）
+     * @param workPlane 工作平面
+     * @return 是否在框内
+     */
+    bool isPointInBox3D(
+        const glm::vec3& point,
+        const glm::vec3 boxCorners[4],
+        const class WorkPlane& workPlane) const;
 };

@@ -38,6 +38,16 @@ bool Renderer::initialize()
             return false;
         }
 
+        shaderDottedLines_ = std::make_unique<Shader>(
+            "shaders/cadshaders/line_dotted/line_dotted.vs",
+            "shaders/cadshaders/line_dotted/line_dotted.fs");
+
+        if (!shaderDottedLines_ || shaderDottedLines_->ID == 0)
+        {
+            qCritical() << "Failed to create shaderDottedLines_";
+            return false;
+        }
+
         // ✅ 手动设置测试值
         hoverStyle_.color = 0x00FF00FF; // 绿色（更明显）
         hoverStyle_.lineWidth = 3.0f;   // 更粗
@@ -74,6 +84,7 @@ void Renderer::shutdown()
 
     // ✅ Shader 通过 unique_ptr 自动清理
     shaderLines_.reset();
+    shaderDottedLines_.reset();
 
     qDebug() << "Renderer shutdown complete";
 }
@@ -388,13 +399,20 @@ void Renderer::syncFromDocument(const Document &doc, const ViewportState &vp, bo
             uploadBox_(e->id, std::get<Box>(e->geom), e->style.rgba);
         }
         break;
+        case EntityType::Rectangle:
+        {
+            uploadRectangle_(e->id, std::get<Rectangle>(e->geom), e->style.rgba, vp);
+        }
+        break;
         }
 
-        // ✅ 更新选择状态
+        // ✅ 更新选择状态和虚线标志
         it = batches_.find(e->id);
         if (it != batches_.end())
         {
             it->second.selected = e->selected;
+            it->second.hovered = e->hovered;   // ⭐ 修复：设置 hover 状态
+            it->second.doted = e->dot;         // 设置虚线标志
         }
     }
 }
@@ -451,15 +469,24 @@ void Renderer::draw(const ViewportState &vp)
         {
             if (isLine)
             {
-                shaderLines_->use();
-                shaderLines_->setMat4("mvp", mvp);
+                // 选择着色器：如果是虚线则用虚线着色器，否则用普通着色器
+                Shader *activeShader = batch.doted ? shaderDottedLines_.get() : shaderLines_.get();
+                activeShader->use();
+                activeShader->setMat4("mvp", mvp);
 
                 float r = ((batch.rgba >> 24) & 0xFF) / 255.0f;
                 float g = ((batch.rgba >> 16) & 0xFF) / 255.0f;
                 float b = ((batch.rgba >> 8) & 0xFF) / 255.0f;
                 float a = ((batch.rgba) & 0xFF) / 255.0f;
 
-                shaderLines_->setVec4("color", glm::vec4(r, g, b, a));
+                activeShader->setVec4("color", glm::vec4(r, g, b, a));
+
+                // 虚线参数（如果使用虚线着色器）
+                if (batch.doted)
+                {
+                    activeShader->setFloat("dashLength", 0.2f); // 虚线段长度
+                    activeShader->setFloat("gapLength", 0.1f);  // 间隙长度
+                }
 
                 glBindVertexArray(batch.vao);
                 if (batch.ibo)
@@ -734,6 +761,93 @@ void Renderer::uploadLine_(EntityId id, const Line &L, std::uint32_t rgba)
     b.indexCount = GLsizei(vb.size());
     b.rgba = rgba;
     b.drawMode = GL_LINES;
+    batches_[id] = b;
+}
+
+void Renderer::uploadRectangle_(EntityId id, const Rectangle &L, std::uint32_t rgba, const ViewportState& vp)
+{
+    GpuBatch b{};
+
+    // ✅ 使用视图矩阵提取摄像机的右向量和上向量
+    // 这样矩形会面向摄像机，与屏幕对齐
+    glm::mat4 invView = glm::inverse(vp.view);
+    glm::vec3 cameraRight = glm::normalize(glm::vec3(invView[0]));   // 视图空间的X轴
+    glm::vec3 cameraUp = glm::normalize(glm::vec3(invView[1]));      // 视图空间的Y轴
+    
+    glm::vec3 p0 = L.p0;
+    glm::vec3 p1 = L.p1;
+    
+    // 计算矩形的两个边向量（在摄像机对齐的平面上）
+    // p0到p1的向量投影到摄像机的右向量和上向量上
+    glm::vec3 diagonal = p1 - p0;
+    float widthComponent = glm::dot(diagonal, cameraRight);
+    float heightComponent = glm::dot(diagonal, cameraUp);
+    
+    // 构建矩形的4个顶点（面向摄像机）
+    glm::vec3 v0 = p0;
+    glm::vec3 v1 = p0 + cameraRight * widthComponent;
+    glm::vec3 v2 = p1;
+    glm::vec3 v3 = p0 + cameraUp * heightComponent;
+
+    // ✅ 使用3D距离计算各边长度
+    float edge0 = glm::distance(v0, v1); // 底边
+    float edge1 = glm::distance(v1, v2); // 右边
+    float edge2 = glm::distance(v2, v3); // 顶边
+    float edge3 = glm::distance(v3, v0); // 左边
+    float perimeter = edge0 + edge1 + edge2 + edge3; // 完整周长
+
+    // 使用扩展的顶点格式，包含位置和沿线距离
+    // 关键：v0出现两次，第二次距离=完整周长，确保第四条边距离递增
+    std::vector<PosDistVertex> vb = {
+        {v0, 0.0f},                      // v0: 起点，距离=0
+        {v1, edge0},                     // v1: 底边终点
+        {v2, edge0 + edge1},             // v2: 右边终点
+        {v3, edge0 + edge1 + edge2},     // v3: 顶边终点
+        {v0, perimeter}                  // v4: 回到起点，距离=完整周长
+    };
+
+    // ✅ 索引：4条独立的线段
+    // 注意：v0在顶点数组中出现两次（索引0和4），第四条边使用索引4
+    std::vector<GLuint> indices = {
+        0, 1, // 上边: v0→v1, dist从0到width
+        1, 2, // 右边: v1→v2, dist从width到width+height
+        2, 3, // 下边: v2→v3, dist从width+height到2*width+height
+        3, 4  // 左边: v3→v4(=v0), dist从2*width+height到perimeter ✓
+    };
+
+    glGenBuffers(1, &b.vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, b.vbo);
+    glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(vb.size() * sizeof(PosDistVertex)), vb.data(), GL_STATIC_DRAW);
+
+    glGenBuffers(1, &b.ibo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, b.ibo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, GLsizeiptr(indices.size() * sizeof(GLuint)), indices.data(), GL_STATIC_DRAW);
+
+    // ✅ 创建VAO并绑定顶点属性
+    GLuint vao = 0;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, b.vbo);
+
+    // 属性0: 位置（vec3）
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(PosDistVertex), (void *)0);
+    glEnableVertexAttribArray(0);
+
+    // 属性1: 距离（float）
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(PosDistVertex),
+                          (void *)offsetof(PosDistVertex, dist));
+    glEnableVertexAttribArray(1);
+
+    if (b.ibo)
+    {
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, b.ibo);
+    }
+    glBindVertexArray(0);
+
+    b.vao = vao;
+    b.indexCount = GLsizei(indices.size());
+    b.rgba = rgba;
+    b.drawMode = GL_LINES; // 使用GL_LINES绘制4条独立的线段
     batches_[id] = b;
 }
 

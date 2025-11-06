@@ -94,7 +94,6 @@ public slots:
     void selectAll();
     void invertSelection();
     void deleteSelected();
-    void drawSelectionBox();
 
 signals:
     void documentChanged();
@@ -122,10 +121,19 @@ private:
         CIRCLE,
         RECT,
         BOX,
+        SELECTBOX,
         COUNT
     };
 
     const char* drawModeToString(DrawMode mode);
+    
+    /**
+     * 将屏幕坐标转换为世界坐标（考虑2D/3D模式和工作平面）
+     * @param screenPos 屏幕坐标
+     * @param outWorldPos [输出] 世界坐标
+     * @return 是否成功转换
+     */
+    bool getWorldPosition(const QPoint& screenPos, glm::vec3& outWorldPos) const;
 
 private:
     // ============================================
@@ -138,6 +146,7 @@ private:
     std::unique_ptr<AxisRenderer> axisRenderer_;
 
     EntityId cur_draw_;
+    EntityId cur_select_box_;
     DrawMode cad_mode_;
     
     // ❌ 删除重复声明：viewportState_ 已在基类中
@@ -158,8 +167,6 @@ private:
 
     // 框选状态
     bool isBoxSelecting_ = false;
-    QPoint boxSelectStart_;
-    QPoint boxSelectEnd_;
 };
 
 #endif // CADDEMO_H

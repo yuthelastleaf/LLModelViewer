@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <unordered_map>
 #include <vector>
 #include <variant>
@@ -7,7 +8,7 @@
 
 using EntityId = std::uint64_t;
 
-enum class EntityType { Line, Polyline, Circle, Arc, Box };
+enum class EntityType { Line, Polyline, Rectangle, Circle, Arc, Box };
 
 struct Style {
     std::uint32_t rgba = 0xFFFFFFFF; // RGBA 格式: 0xRRGGBBAA
@@ -22,6 +23,7 @@ struct Style {
 
 struct Line      { glm::vec3 p0, p1; };
 struct Polyline  { std::vector<glm::vec3> pts; bool closed = false; };
+struct Rectangle { glm::vec3 p0, p1; };
 struct Circle    { glm::vec3 c; float r; };
 struct Arc       { glm::vec3 c; float r; float a0, a1; /* 弧度 */ };
 // ✅ 新增：立方体实体（正六面体）
@@ -37,9 +39,10 @@ struct Entity {
     EntityId id{};
     EntityType type{};
     Style style{};
-    std::variant<Line, Polyline, Circle, Arc, Box> geom;
+    std::variant<Line, Polyline, Rectangle, Circle, Arc, Box> geom;
     bool visible = true;
     bool dirty = true;  // 标记是否需要重新上传到 GPU
+    bool dot = false; // 标记是否以虚线绘制，主要面向2d图形，3d后续看可以怎么处理
 
     // ✅ v0.2: 选择状态
     bool selected = false;     // 是否被选中
@@ -58,10 +61,17 @@ public:
     bool     remove(EntityId id);
     void     clear();
     
+    // ✅ 删除回调：在实体被删除时通知外部（如Renderer）
+    using RemoveCallback = std::function<void(EntityId)>;
+    void setRemoveCallback(RemoveCallback callback) { onRemove_ = callback; }
+    
     // 更新实体（标记为 dirty）
     bool update(EntityId id, const Entity& e);
     void markDirty(EntityId id);
     void clearAllDirtyFlags();
+    void clearAllSelectedFlags();
+    void clearAllHoverFlags();
+    void transHoverToSelected();
 
     // 更新实体信息
     bool updateEndLinePoint(EntityId id, glm::vec3 linepos);
@@ -69,6 +79,7 @@ public:
     // 便捷构造（可选）
     EntityId addLine(const glm::vec3& a, const glm::vec3& b, const Style& s = {});
     EntityId addPolyline(const std::vector<glm::vec3>& pts, bool closed, const Style& s = {});
+    EntityId addRectangle(const glm::vec3& a, const glm::vec3& b, bool closed, const Style& s = {}, bool doted = false);
     EntityId addCircle(const glm::vec3& c, float r, const Style& s = {});
     EntityId addArc(const glm::vec3& c, float r, float a0, float a1, const Style& s = {});
     EntityId addBox(const glm::vec3& center, float size, const Style& s = {});
@@ -76,4 +87,5 @@ public:
 private:
     std::unordered_map<EntityId, Entity> map_;
     EntityId next_ = 1;
+    RemoveCallback onRemove_;  // 删除回调
 };
