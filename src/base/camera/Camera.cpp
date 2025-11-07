@@ -27,8 +27,6 @@ Camera::Camera(CameraType camType) : type(camType) {
 
 glm::mat4 Camera::getViewMatrix() const {
     if (type == CameraType::ORBIT || type == CameraType::ORTHO_2D) {
-        // qDebug() << "lookat params: " << position << "--" <<  position << "--" <<  up;
-
         return glm::lookAt(position, target, up);
     }
     else {
@@ -90,20 +88,16 @@ void Camera::processMouseMovement(float deltaX, float deltaY) {
 
 void Camera::processMouseScroll(float deltaY) {
     if (type == CameraType::ORTHO_2D) {
-        // 2D 模式：调整正交视口大小（zoom）
         radius *= (1.0f - deltaY * zoomSpeed);
         radius = std::clamp(radius, 0.1f, 100.0f);
         updateOrbitPosition();
-        // qDebug() << "2D Zoom: radius =" << radius;
     }
     else if (type == CameraType::ORBIT) {
-        // 3D 轨道模式：调整距离
         radius -= deltaY * scrollSensitivity;
         radius = std::clamp(radius, 1.0f, 50.0f);
         updateOrbitPosition();
     }
     else {
-        // FPS/FREE 模式：调整 FOV
         fov -= deltaY;
         fov = std::clamp(fov, 1.0f, 90.0f);
     }
@@ -180,8 +174,6 @@ void Camera::pan2D(float deltaX, float deltaY, float worldPerPixel) {
     // 同时移动 target 和 position
     target += panOffset;
     position += panOffset;
-    
-    // qDebug() << "2D Pan: target =" << target.x << target.y << target.z;
 }
 
 void Camera::ProcessKeyboard(int direction, float deltaTime) {
@@ -230,8 +222,6 @@ void Camera::SetType(CameraType newType) {
     else {
         updateCameraVectors();
     }
-    
-    qDebug() << "Camera type changed to:" << (int)newType << ", 2D mode:" << is2DMode;
 }
 
 void Camera::set2DMode(bool enable) {
@@ -240,23 +230,14 @@ void Camera::set2DMode(bool enable) {
     is2DMode = enable;
     
     if (enable) {
-        // 切换到 2D 模式
-        qDebug() << "Switching to 2D mode";
-        
-        // 保存当前 3D 参数
         saved3DYaw = yaw;
         saved3DPitch = pitch;
         saved3DRadius = radius;
         
-        // 应用 2D 视图方向
         type = CameraType::ORTHO_2D;
         apply2DOrientation();
     }
     else {
-        // 切换回 3D 模式
-        qDebug() << "Switching to 3D mode";
-        
-        // 恢复 3D 参数
         type = CameraType::ORBIT;
         yaw = saved3DYaw;
         pitch = saved3DPitch;
@@ -344,8 +325,6 @@ void Camera::reset() {
     else {
         updateCameraVectors();
     }
-    
-    qDebug() << "Camera reset";
 }
 
 // ============================================
@@ -368,8 +347,6 @@ void Camera::updateOrbitPosition() {
     float y = radius * sin(glm::radians(pitch));
     float z = radius * cos(glm::radians(pitch)) * sin(glm::radians(yaw));
 
-    // qDebug() << "radius: " << radius << "  yaw:" << yaw << "- x = " << x << " pitch:" << pitch << " - y=" << y << " z=" << z;
-
     position = target + glm::vec3(x, y, z);
     front = glm::normalize(target - position);
     right = glm::normalize(glm::cross(front, worldUp));
@@ -384,18 +361,15 @@ void Camera::apply2DOrientation() {
             break;
             
         case View2DOrientation::FRONT:
-            // 正视图：从 +Z 看向 -Z，X 向右，Y 向上
             yaw = 0.0f;
             pitch = 0.0f;
             break;
             
         case View2DOrientation::RIGHT:
             yaw = 0.0f;
-            pitch = 89.9f;// 右视图：从 +X 看向 -X，Z 向右，Y 向上
+            pitch = 89.9f;
             break;
     }
     
     updateOrbitPosition();
-    qDebug() << "Applied 2D orientation:" << (int)view2DOrientation 
-             << ", yaw=" << yaw << ", pitch=" << pitch;
 }

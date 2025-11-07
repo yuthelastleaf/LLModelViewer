@@ -129,6 +129,22 @@ public:
         float pixelThreshold = 5.0f) const;
     
     // ============================================
+    // ✅ v0.3: Gizmo 轴拾取
+    // ============================================
+    
+    /**
+     * 拾取 Gizmo 轴
+     * @param ray 射线
+     * @param document 文档
+     * @param threshold 拾取阈值（世界单位）
+     * @return 拾取到的轴索引（0=X, 1=Y, 2=Z），如果没有拾取到返回-1
+     */
+    int pickGizmoAxis(
+        const Ray& ray,
+        const Document& document,
+        float threshold = 0.1f) const;
+    
+    // ============================================
     // ✅ v0.2: 2D 框选功能
     // ============================================
     

@@ -145,6 +145,7 @@ private:
     void uploadCircle_(EntityId id, const Circle& C, std::uint32_t rgba, const ViewportState& vp);
     void uploadArc_(EntityId id, const Arc& A, std::uint32_t rgba, const ViewportState& vp);
     void uploadBox_(EntityId id, const Box& B, std::uint32_t rgba);
+    void uploadGizmoAxis_(EntityId id, const GizmoAxis& G, std::uint32_t rgba, const ViewportState& vp);
 
     // 折线细分：保证屏幕误差 ~ 0.5 像素
     static std::vector<glm::vec3> tessellateCircle(const Circle& C, float worldEps);

@@ -161,6 +161,8 @@ set(CAD_BASE_SOURCES
     src/cad/selection/Picker.h
     src/cad/selection/SelectionManager.cpp
     src/cad/selection/SelectionManager.h
+    src/cad/transform/Transform.h
+    src/cad/transform/Transform.cpp
 )
 
 # 具体 Demo 实现

@@ -61,9 +61,6 @@ bool Renderer::initialize()
         selectionStyle_.glowColor = 0xFF000080; // 半透明红色
         selectionStyle_.glowWidth = 6.0f;
 
-        qDebug() << "Renderer initialized successfully with custom Shader";
-        qDebug() << "Shader ID:" << shaderLines_->ID;
-
         return true;
     }
     catch (const std::exception &e)
@@ -82,11 +79,8 @@ void Renderer::shutdown()
     }
     batches_.clear();
 
-    // ✅ Shader 通过 unique_ptr 自动清理
     shaderLines_.reset();
     shaderDottedLines_.reset();
-
-    qDebug() << "Renderer shutdown complete";
 }
 GLuint Renderer::makeVao(GLuint vbo, GLuint ibo)
 {
@@ -325,7 +319,6 @@ void Renderer::syncFromDocument(const Document &doc, const ViewportState &vp, bo
 
     if (forceRebuild)
     {
-        // 全量重建
         for (auto &kv : batches_)
             freeBatch_(kv.second);
         batches_.clear();
@@ -402,6 +395,12 @@ void Renderer::syncFromDocument(const Document &doc, const ViewportState &vp, bo
         case EntityType::Rectangle:
         {
             uploadRectangle_(e->id, std::get<Rectangle>(e->geom), e->style.rgba, vp);
+        }
+        break;
+        
+        case EntityType::GizmoAxis:
+        {
+            uploadGizmoAxis_(e->id, std::get<GizmoAxis>(e->geom), e->style.rgba, vp);
         }
         break;
         }
@@ -1005,4 +1004,56 @@ std::vector<glm::vec3> Renderer::tessellateArc(const Arc &A, float worldEps)
         pts.push_back({A.c.x + A.r * std::cos(t), A.c.y + A.r * std::sin(t), A.c.z});
     }
     return pts;
+}
+
+void Renderer::uploadGizmoAxis_(EntityId id, const GizmoAxis& G, std::uint32_t rgba, const ViewportState& vp)
+{
+    GpuBatch b{};
+    
+    // 计算轴的端点
+    glm::vec3 axisEnd = G.origin + G.direction * G.length;
+    
+    // 计算箭头参数
+    float arrowSize = G.length * 0.15f;
+    glm::vec3 arrowBase = axisEnd - G.direction * arrowSize;
+    
+    // 计算垂直于轴的两个方向
+    glm::vec3 perpDir1, perpDir2;
+    if (std::abs(G.direction.x) < 0.9f) {
+        perpDir1 = glm::normalize(glm::cross(G.direction, glm::vec3(1, 0, 0)));
+    } else {
+        perpDir1 = glm::normalize(glm::cross(G.direction, glm::vec3(0, 1, 0)));
+    }
+    perpDir2 = glm::cross(G.direction, perpDir1);
+    
+    float arrowWidth = arrowSize * 0.3f;
+    
+    // 构建顶点：轴线 + 箭头的4条边
+    std::vector<PosVertex> vb;
+    vb.reserve(10);
+    
+    // 轴线（2个顶点）
+    vb.push_back({G.origin});
+    vb.push_back({axisEnd});
+    
+    // 箭头的4条边（8个顶点）
+    vb.push_back({arrowBase + perpDir1 * arrowWidth});
+    vb.push_back({axisEnd});
+    vb.push_back({arrowBase - perpDir1 * arrowWidth});
+    vb.push_back({axisEnd});
+    vb.push_back({arrowBase + perpDir2 * arrowWidth});
+    vb.push_back({axisEnd});
+    vb.push_back({arrowBase - perpDir2 * arrowWidth});
+    vb.push_back({axisEnd});
+    
+    // 上传到 GPU
+    glGenBuffers(1, &b.vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, b.vbo);
+    glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(vb.size() * sizeof(PosVertex)), vb.data(), GL_STATIC_DRAW);
+    
+    b.vao = makeVao(b.vbo, 0);
+    b.indexCount = GLsizei(vb.size());
+    b.rgba = rgba;
+    b.drawMode = GL_LINES;
+    batches_[id] = b;
 }

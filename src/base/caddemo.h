@@ -7,6 +7,7 @@
 #include "../cad/data/GridAxisHelper.h"
 #include "../cad/selection/Picker.h"
 #include "../cad/selection/SelectionManager.h"
+#include "../cad/transform/Transform.h"
 #include "util/RayUtils.h"
 #include "util/WorkPlane.h"
 #include <memory>
@@ -117,6 +118,7 @@ private:
     enum class DrawMode {
         VIEW = 0,
         SELECT,
+        MOVE,        // ✅ 新增：移动模式
         LINE,
         CIRCLE,
         RECT,
@@ -155,6 +157,9 @@ private:
     bool showGrid_;
     bool showAxis_;
     bool documentDirty_;
+    bool viewportResized_ = false;  // ✅ 标记窗口大小是否改变
+    int lastViewportWidth_ = 0;     // ✅ 上次的视口宽度
+    int lastViewportHeight_ = 0;    // ✅ 上次的视口高度
     
     // 鼠标交互
     bool isPanning_;
@@ -167,6 +172,20 @@ private:
 
     // 框选状态
     bool isBoxSelecting_ = false;
+    
+    // ✅ v0.3: 变换系统（使用 Document 管理 Gizmo）
+    std::vector<EntityId> gizmoAxisIds_;    // Gizmo 轴的实体 ID（X/Y/Z）
+    bool isTransforming_ = false;           // 是否正在变换
+    int draggedAxisIndex_ = -1;             // 拖拽的轴索引（0=X, 1=Y, 2=Z，-1=无）
+    glm::vec3 transformStartPos_;           // 变换开始时的鼠标位置
+    glm::vec3 transformOffset_;             // 累积的变换偏移
+    float gizmoSize_ = 1.0f;                // Gizmo 大小（世界单位）
+    
+    // Gizmo 辅助方法
+    void createGizmo(const glm::vec3& center);
+    void destroyGizmo();
+    void updateGizmoPosition(const glm::vec3& center);
+    void updateGizmoSize(const ViewportState& vp);
 };
 
 #endif // CADDEMO_H

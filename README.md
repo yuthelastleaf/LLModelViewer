@@ -87,12 +87,77 @@ cmake编译的时候，glad库什么的找不到，有时候就是cmakelists中�
 MVP 里程碑：
 
 v0.1 Viewer：加载 Document，渲染实体；平移/缩放、网格显示、坐标轴。✅
-v0.2 选择 & 框选：Pick、SelectionManager、选中高亮。
-v0.3 变换 Gizmo：移动工具（单轴/任意）、命令栈 Undo/Redo。
+v0.2 选择 & 框选：Pick、SelectionManager、选中高亮。✅
+v0.3 变换 Gizmo：移动工具（单轴/任意）、命令栈 Undo/Redo。✅ (移动工具完成)
 v0.4 绘制工具：Line/Polyline/Circle；捕捉（网格/端点/中点）；预览几何。
 v0.5 属性/图层：属性面板编辑颜色线宽；图层显示/锁定；ByLayer。
 v0.6 存盘/读盘：JSON *.mcd；工程设置（单位/精度）。
 v0.7 几何运算：偏移/倒角/圆角（可先调用简化算法，后续抽象成 Kernel）
+
+## v0.3 变换系统 - 移动功能使用说明
+
+### 功能概述
+实现了基于 Gizmo 的对象移动功能，支持单轴移动和自由移动。
+
+### 核心组件
+
+#### 1. Transform 工具类 (`src/cad/transform/Transform.h/cpp`)
+提供实体变换的基础功能：
+- `getEntityCenter()` - 计算实体中心点
+  - Line: 中点
+  - Polyline: 所有顶点的平均值
+  - Rectangle: 对角线中点
+  - Circle/Arc: 圆心
+  - Box: 立方体中心
+- `getSelectionCenter()` - 计算选中对象的整体中心
+- `translateEntity()` - 平移单个实体
+- `translateEntities()` - 平移多个实体
+- `getEntityBounds()` - 获取实体包围盒
+
+#### 2. TransformGizmo 渲染器 (`src/cad/transform/TransformGizmo.h/cpp`)
+可视化移动轴和交互：
+- 绘制 X/Y/Z 三个轴（红/绿/蓝）
+- 支持轴高亮显示（鼠标悬停/拖拽时）
+- 射线拾取检测（点击哪个轴）
+- 屏幕空间恒定大小（不随视角缩放）
+
+#### 3. 集成到 CADDemo
+- 新增 `DrawMode::MOVE` 模式
+- 选中对象后自动显示 Gizmo
+- 支持单轴移动（X/Y/Z）和自由移动
+- 实时预览移动效果
+
+### 使用方法
+
+1. **选择对象**
+   - 切换到 "Select" 模式
+   - 点击或框选需要移动的对象
+
+2. **进入移动模式**
+   - 切换到 "Move" 模式
+   - Gizmo 会自动显示在选中对象的中心
+
+3. **移动对象**
+   - 点击并拖拽某个轴（X/Y/Z）进行单轴移动
+   - 拖拽过程中实时显示移动偏移量
+   - 释放鼠标完成移动
+
+### 技术特点
+
+- **自动中心计算**：根据实体类型智能计算中心点
+- **轴约束移动**：拖拽特定轴时，只在该轴方向移动
+- **实时反馈**：移动过程中实时更新实体位置和 Gizmo 位置
+- **屏幕空间一致性**：Gizmo 大小不随视角变化
+- **射线拾取**：精确的轴拾取检测
+
+### 待实现功能
+
+- [ ] 双轴平面移动（XY/XZ/YZ 平面）
+- [ ] 视图平面自由移动
+- [ ] Undo/Redo 支持
+- [ ] 数值输入框（精确移动）
+- [ ] 对齐/捕捉功能
+- [ ] 旋转和缩放 Gizmo
 
 std::clamp函数接受三个参数：要限制的值v，下限lo和上限hi。如果v小于lo，则返回lo；如果v大于hi，则返回hi；否则返回v本身。因此，该函数确保返回的值始终在[lo, hi]的范围内。
 

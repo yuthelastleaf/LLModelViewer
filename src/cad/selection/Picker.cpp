@@ -409,11 +409,72 @@ std::vector<Picker::PickResult> Picker::pickAll2D(
         }
     }
     
-    qDebug() << "res size : " << results.size();
-    // 按距离排序
     std::sort(results.begin(), results.end());
     
     return results;
+}
+
+// ============================================
+// ✅ v0.3: Gizmo 轴拾取实现
+// ============================================
+
+int Picker::pickGizmoAxis(
+    const Ray& ray,
+    const Document& document,
+    float threshold) const {
+    
+    int pickedAxis = -1;
+    float minDistance = std::numeric_limits<float>::max();
+    
+    // 遍历所有 GizmoAxis 实体
+    for (const auto* entity : document.all()) {
+        if (!entity || entity->type != EntityType::GizmoAxis) continue;
+        if (!entity->isGizmo) continue;  // 确保是 Gizmo 实体
+        
+        const auto* gizmo = std::get_if<GizmoAxis>(&entity->geom);
+        if (!gizmo) continue;
+        
+        // 计算射线与轴的最近距离
+        glm::vec3 axisEnd = gizmo->origin + gizmo->direction * gizmo->length;
+        
+        // 使用射线与线段的距离计算
+        glm::vec3 w0 = ray.getOrigin() - gizmo->origin;
+        glm::vec3 u = ray.getDirection();
+        glm::vec3 v = gizmo->direction;
+        
+        float a = glm::dot(u, u);  // 总是 1（归一化）
+        float b = glm::dot(u, v);
+        float c = glm::dot(v, v);  // 总是 1（归一化）
+        float d = glm::dot(u, w0);
+        float e = glm::dot(v, w0);
+        
+        float denom = a * c - b * b;
+        if (std::abs(denom) < 1e-6f) {
+            // 平行或重合
+            continue;
+        }
+        
+        float sc = (b * e - c * d) / denom;
+        float tc = (a * e - b * d) / denom;
+        
+        // 检查 tc 是否在轴的有效范围内
+        if (tc < 0.0f || tc > gizmo->length) {
+            continue;
+        }
+        
+        // 计算最近点的距离
+        glm::vec3 closestOnRay = ray.getOrigin() + u * sc;
+        glm::vec3 closestOnAxis = gizmo->origin + v * tc;
+        float dist = glm::distance(closestOnRay, closestOnAxis);
+        
+        // 检查是否在阈值内，并且是最近的
+        if (dist < threshold && dist < minDistance) {
+            minDistance = dist;
+            pickedAxis = gizmo->axisIndex;
+        }
+    }
+    
+    return pickedAxis;
 }
 
 // ============================================
@@ -426,32 +487,21 @@ float Picker::distanceToLine2D(
     const ViewportState& vp,
     glm::vec3* closestPoint) const {
     
-    // 将 3D 点投影到屏幕坐标
     glm::vec2 p = vp.worldToScreen(point);
     glm::vec2 a = vp.worldToScreen(line.p0);
     glm::vec2 b = vp.worldToScreen(line.p1);
     
     glm::vec2 closest2D;
     float pixelDist = pointToSegmentDistance(p, a, b, &closest2D);
-
-    qDebug() << "======start======";
-    qDebug() << p.x << " - " << p.y;
-    qDebug() << a.x << " - " << a.y;
-    qDebug() << b.x << " - " << b.y;
-    qDebug() << closest2D.x << " - " << closest2D.y;
-    qDebug() << pixelDist << " - " << pixelDist * vp.worldPerPixel;
-    qDebug() << "======end======";
     
     if (closestPoint) {
-        // 将屏幕坐标转回世界坐标
         *closestPoint = vp.screenToWorld(
             static_cast<int>(closest2D.x),
             static_cast<int>(closest2D.y),
-            point.z  // 保持相同的 Z 平面
+            point.z
         );
     }
     
-    // 转换为世界单位距离
     return pixelDist * vp.worldPerPixel;
 }
 
@@ -752,10 +802,8 @@ std::vector<EntityId> Picker::selectByBox2D(
     Document& document,
     BoxSelectMode mode) const {
     
-    // 1. 获取矩形框实体
     const Entity* boxEntity = document.get(boxEntityId);
     if (!boxEntity || boxEntity->type != EntityType::Rectangle) {
-        qDebug() << "Invalid box entity ID or not a Rectangle";
         return {};
     }
     
@@ -764,7 +812,6 @@ std::vector<EntityId> Picker::selectByBox2D(
         return {};
     }
     
-    // 2. 计算矩形框的边界（2D，忽略 Z）
     float minX = std::min(rect->p0.x, rect->p1.x);
     float maxX = std::max(rect->p0.x, rect->p1.x);
     float minY = std::min(rect->p0.y, rect->p1.y);
@@ -839,7 +886,6 @@ std::vector<EntityId> Picker::selectByBox2D(
         }
     }
     
-    qDebug() << "Box selection found" << selectedIds.size() << "entities";
     return selectedIds;
 }
 
@@ -1144,10 +1190,8 @@ std::vector<EntityId> Picker::selectByBox3D(
     const WorkPlane& workPlane,
     BoxSelectMode mode) const {
     
-    // 1. 获取矩形框实体
     const Entity* boxEntity = document.get(boxEntityId);
     if (!boxEntity || boxEntity->type != EntityType::Rectangle) {
-        qDebug() << "Invalid box entity ID or not a Rectangle";
         return {};
     }
     
@@ -1156,30 +1200,22 @@ std::vector<EntityId> Picker::selectByBox3D(
         return {};
     }
     
-    // 2. 计算框的四个角点（世界坐标）
     glm::vec3 boxCorners[4] = {
-        rect->p0,                                          // 左下
-        glm::vec3(rect->p1.x, rect->p0.y, rect->p0.z),   // 右下
-        rect->p1,                                          // 右上
-        glm::vec3(rect->p0.x, rect->p1.y, rect->p0.z)    // 左上
+        rect->p0,
+        glm::vec3(rect->p1.x, rect->p0.y, rect->p0.z),
+        rect->p1,
+        glm::vec3(rect->p0.x, rect->p1.y, rect->p0.z)
     };
-    
-    qDebug() << "3D Box selection corners:";
-    for (int i = 0; i < 4; ++i) {
-        qDebug() << "  Corner" << i << ":" << boxCorners[i].x << boxCorners[i].y << boxCorners[i].z;
-    }
     
     std::vector<EntityId> selectedIds;
     
-    // 3. 遍历所有实体，使用射线投影方式检测
     for (auto* entity : document.all()) {
         if (!entity || entity->id == boxEntityId) {
-            continue;  // 跳过矩形框自己
+            continue;
         }
         
         bool shouldSelect = checkEntityInBox3D(*entity, boxCorners, vp, mode);
         
-        // 4. 设置 hover 状态
         if (shouldSelect) {
             if (!entity->hovered) {
                 entity->hovered = true;
@@ -1194,7 +1230,6 @@ std::vector<EntityId> Picker::selectByBox3D(
         }
     }
     
-    qDebug() << "3D Box selection found" << selectedIds.size() << "entities";
     return selectedIds;
 }
 
@@ -1309,12 +1344,8 @@ bool Picker::checkEntityInBox3D(
         return true;  // 所有点都在框内
         
     } else {
-        // 相交模式：生成射线网格，检查是否有射线击中实体
         std::vector<Ray> rays = generateBoxRays(boxCorners, vp, 8);
         
-        qDebug() << "Generated" << rays.size() << "rays for entity" << entity.id;
-        
-        // 对每条射线测试是否与实体相交
         for (const auto& ray : rays) {
             glm::vec3 hitPoint;
             bool hit = false;
@@ -1376,12 +1407,11 @@ bool Picker::checkEntityInBox3D(
             }
             
             if (hit) {
-                qDebug() << "  Ray hit entity" << entity.id;
-                return true;  // 只要有一条射线击中就算相交
+                return true;
             }
         }
         
-        return false;  // 没有射线击中
+        return false;
     }
 }
 
@@ -1444,10 +1474,6 @@ std::vector<Ray> Picker::generateBoxRays(
             rays.push_back(ray);
         }
     }
-    
-    qDebug() << "Generated" << rays.size() << "rays (" 
-             << "4 corners + " << (sampleCount-1)*4 << " edges + " 
-             << (sampleCount-1)*(sampleCount-1) << " interior)";
     
     return rays;
 }

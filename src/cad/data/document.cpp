@@ -168,3 +168,16 @@ EntityId Document::addBox(const glm::vec3 &center, float size, const Style &s)
     e.geom = Box{center, size};
     return add(std::move(e));
 }
+
+EntityId Document::addGizmoAxis(const glm::vec3& origin, const glm::vec3& direction, 
+                                float length, int axisIndex, const Style& s)
+{
+    if (length <= 0.0f) return 0;  // 边界检查
+    
+    Entity e;
+    e.type = EntityType::GizmoAxis;
+    e.style = s;
+    e.geom = GizmoAxis{origin, direction, length, axisIndex};
+    e.isGizmo = true;  // 标记为 Gizmo
+    return add(std::move(e));
+}

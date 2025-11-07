@@ -203,6 +203,11 @@ void GridRenderer::draw(Renderer &r, const ViewportState &vp,
     glBindVertexArray(gridVAO_);
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
     glBindVertexArray(0);
+    
+    // ✅ 恢复 OpenGL 状态，避免影响其他 Demo
+    glDepthMask(GL_TRUE);   // 恢复深度写入
+    glDisable(GL_BLEND);    // 禁用混合
+    glDepthFunc(GL_LESS);   // 恢复默认深度测试函数
 }
 
 // ✅ 保留传统线段方式作为备用

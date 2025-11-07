@@ -87,7 +87,7 @@ void Demo::processMouseWheel(int offset)
 {
     float yOffset = (float)offset / 120.0f;
     camera->processMouseScroll(yOffset);
-    updateViewportState(); // ✅ 缩放后更新视口状态
+    updateViewportState();
     emit parameterChanged();
 }
 
@@ -95,7 +95,7 @@ void Demo::resizeViewport(int width, int height)
 {
     viewportWidth = width;
     viewportHeight = height;
-    updateViewportState(); // ✅ 窗口大小改变时更新视口状态
+    updateViewportState();
 }
 
 // ============================================
@@ -116,8 +116,15 @@ glm::mat4 Demo::getBackViewMatrix() const
 
 glm::mat4 Demo::getProjectionMatrix() const
 {
+    // ✅ 防止除零或无效宽高
+    if (viewportWidth <= 0 || viewportHeight <= 0) {
+        qWarning() << "Invalid viewport size:" << viewportWidth << "x" << viewportHeight;
+        return glm::mat4(1.0f);  // 返回单位矩阵
+    }
+    
     float aspect = (float)viewportWidth / (float)viewportHeight;
-    return glm::perspective(glm::radians(camera->getFov()), aspect, 0.1f, 100.0f);
+    // ✅ 使用相机自己的投影矩阵，支持正交和透视投影
+    return camera->getProjectionMatrix(aspect);
 }
 
 glm::mat4 Demo::getMVPMatrix(const glm::mat4 &model) const

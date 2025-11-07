@@ -27,30 +27,22 @@ GLWidget::GLWidget(QWidget *parent)
     // 启动帧计时器
     frameTimer.start();
 
-    // 设置焦点策略以接收键盘事件
     setFocusPolicy(Qt::StrongFocus);
 
-    // 启用鼠标追踪 - 这样即使没按下按钮也能收到鼠标移动事件
     setMouseTracking(true);
-    qDebug() << "GLWidget created";
 }
 
 GLWidget::~GLWidget()
 {
-    qDebug() << "GLWidget destroying...";
-
     makeCurrent();
 
     if (currentDemo)
     {
-        qDebug() << "Cleaning up demo:" << currentDemo->getName();
         currentDemo->cleanup();
         currentDemo.reset();
     }
 
     doneCurrent();
-
-    qDebug() << "GLWidget destroyed";
 }
 
 // ============================================
@@ -84,8 +76,6 @@ bool GLWidget::registerDemo(const QString &id,
     DemoInfo info(name, description, category, std::move(factory));
     demoRegistry[id] = std::move(info);
 
-    qDebug() << "Registered demo:" << id << "-" << name << "[" << category << "]";
-
     emit demoRegistered(id);
     return true;
 }
@@ -95,13 +85,11 @@ void GLWidget::unregisterDemo(const QString &id)
     auto it = demoRegistry.find(id);
     if (it != demoRegistry.end())
     {
-        // 如果当前正在显示这个 Demo，先清除
         if (currentDemoId == id)
         {
             clearDemo();
         }
 
-        qDebug() << "Unregistered demo:" << id;
         demoRegistry.erase(it);
         emit demoUnregistered(id);
     }
@@ -171,11 +159,9 @@ bool GLWidget::loadDemo(const QString &id)
             return false;
         }
 
-        // 设置 Demo
         currentDemoId = id;
         setDemo(std::move(demo));
 
-        qDebug() << "Loaded demo:" << id;
         return true;
     }
     catch (const std::exception &e)
@@ -190,10 +176,8 @@ void GLWidget::setDemo(std::unique_ptr<Demo> demo)
 {
     makeCurrent();
 
-    // 清理旧的 Demo
     if (currentDemo)
     {
-        qDebug() << "Cleaning up old demo:" << currentDemo->getName();
         disconnect(currentDemo.get(), nullptr, this, nullptr);
         currentDemo->cleanup();
     }
@@ -202,24 +186,16 @@ void GLWidget::setDemo(std::unique_ptr<Demo> demo)
 
     if (currentDemo)
     {
-        qDebug() << "Setting up new demo:" << currentDemo->getName();
-
         if (glInitialized)
         {
+            // ✅ 先设置正确的视口大小，再初始化
+            currentDemo->resizeViewport(width(), height());
             currentDemo->initialize();
         }
 
-        currentDemo->resizeViewport(width(), height());
-
-        // 连接信号
         connect(currentDemo.get(), &Demo::statusMessage,
                 this, &GLWidget::onDemoStatusMessage);
 
-        // ❌ 删除这个连接！不要每次参数改变都重建面板
-        // connect(currentDemo.get(), &Demo::parameterChanged,
-        //         this, &GLWidget::updateControlPanel);
-
-        // ✅ 只触发重绘
         connect(currentDemo.get(), &Demo::parameterChanged,
                 this, [this]()
                 { update(); });
@@ -228,7 +204,6 @@ void GLWidget::setDemo(std::unique_ptr<Demo> demo)
     }
     else
     {
-        qDebug() << "Demo cleared";
         currentDemoId.clear();
         emit statusMessage("No demo loaded");
     }
@@ -237,9 +212,7 @@ void GLWidget::setDemo(std::unique_ptr<Demo> demo)
 
     emit demoChanged(currentDemo.get(), currentDemoId);
 
-    // ✅ 只在 demoChanged 信号中重建控制面板（已经在第 415-429 行有处理）
-    // 不需要这里再调用 updateControlPanel()
-
+    updateGeometry();
     update();
 }
 
@@ -507,7 +480,6 @@ void GLWidget::initializeGL()
 
     if (currentDemo)
     {
-        qDebug() << "Initializing demo:" << currentDemo->getName();
         currentDemo->initialize();
         emit statusMessage(QString("Demo initialized: %1").arg(currentDemo->getName()));
     }

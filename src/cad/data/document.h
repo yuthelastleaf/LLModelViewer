@@ -8,7 +8,7 @@
 
 using EntityId = std::uint64_t;
 
-enum class EntityType { Line, Polyline, Rectangle, Circle, Arc, Box };
+enum class EntityType { Line, Polyline, Rectangle, Circle, Arc, Box, GizmoAxis };
 
 struct Style {
     std::uint32_t rgba = 0xFFFFFFFF; // RGBA 格式: 0xRRGGBBAA
@@ -34,12 +34,20 @@ struct Box {
     glm::vec3 rotation = glm::vec3(0.0f);  // 欧拉角
 };
 
+// ✅ v0.3: Gizmo 轴（用于移动/旋转/缩放）
+struct GizmoAxis {
+    glm::vec3 origin;       // 轴起点（通常是选中对象的中心）
+    glm::vec3 direction;    // 轴方向（归一化）
+    float length;           // 轴长度
+    int axisIndex;          // 轴索引：0=X, 1=Y, 2=Z
+};
+
 
 struct Entity {
     EntityId id{};
     EntityType type{};
     Style style{};
-    std::variant<Line, Polyline, Rectangle, Circle, Arc, Box> geom;
+    std::variant<Line, Polyline, Rectangle, Circle, Arc, Box, GizmoAxis> geom;
     bool visible = true;
     bool dirty = true;  // 标记是否需要重新上传到 GPU
     bool dot = false; // 标记是否以虚线绘制，主要面向2d图形，3d后续看可以怎么处理
@@ -47,6 +55,9 @@ struct Entity {
     // ✅ v0.2: 选择状态
     bool selected = false;     // 是否被选中
     bool hovered = false;      // 是否被鼠标悬停（可选）
+    
+    // ✅ v0.3: 特殊标记
+    bool isGizmo = false;      // 是否是 Gizmo（不参与常规选择）
 };
 
 class Document {
@@ -83,6 +94,10 @@ public:
     EntityId addCircle(const glm::vec3& c, float r, const Style& s = {});
     EntityId addArc(const glm::vec3& c, float r, float a0, float a1, const Style& s = {});
     EntityId addBox(const glm::vec3& center, float size, const Style& s = {});
+    
+    // ✅ v0.3: Gizmo 相关
+    EntityId addGizmoAxis(const glm::vec3& origin, const glm::vec3& direction, 
+                          float length, int axisIndex, const Style& s = {});
 
 private:
     std::unordered_map<EntityId, Entity> map_;

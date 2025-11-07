@@ -144,6 +144,13 @@ void TriangleDemo::render()
     glm::mat4 projection = getProjectionMatrix();
     glm::mat4 mvp = projection * view * model;
     
+    // 🔍 调试输出
+    static int debugCounter = 0;
+    if (debugCounter++ % 60 == 0) {  // 每60帧输出一次
+        qDebug() << "TriangleDemo render - viewport:" << viewportWidth << "x" << viewportHeight;
+        qDebug() << "  Camera type:" << (int)camera->getType() << "Position:" << camera->getPosition().x << camera->getPosition().y << camera->getPosition().z;
+    }
+    
     // 传递 MVP 矩阵到着色器
     shader->setMat4("mvp", mvp);
     
