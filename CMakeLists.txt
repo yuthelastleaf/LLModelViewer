@@ -161,6 +161,12 @@ set(CAD_BASE_SOURCES
     src/cad/selection/SelectionSystem.h
     src/cad/transform/Transform.h
     src/cad/transform/Transform.cpp
+    # ✅ v0.4: 命令系统
+    src/cad/command/Command.h
+    src/cad/command/CommandManager.h
+    src/cad/command/CommandManager.cpp
+    src/cad/command/EntityCommands.h
+    src/cad/command/EntityCommands.cpp
 )
 
 # 具体 Demo 实现

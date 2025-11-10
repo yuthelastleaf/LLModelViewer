@@ -10,6 +10,7 @@
 #include <QButtonGroup>
 #include <QPointer>
 #include <QApplication>
+#include <QKeyEvent>
 #include <glm/gtc/matrix_transform.hpp>
 
 CADDemo::CADDemo(QObject *parent)
@@ -66,6 +67,15 @@ CADDemo::CADDemo(QObject *parent)
     // ✅ 注册实体删除回调，自动清理 GPU 批次
     document_->setRemoveCallback([this](EntityId id)
                                  { renderer_->removeBatch(id); });
+
+    // ✅ 连接命令管理器信号
+    auto& cmdMgr = CommandManager::instance();
+    connect(&cmdMgr, &CommandManager::stackChanged, 
+            this, &CADDemo::onCommandStackChanged);
+    connect(&cmdMgr, &CommandManager::memoryWarning,
+            this, [this](size_t currentMB, size_t limitMB) {
+                emit statusMessage(QString("Memory warning: %1MB/%2MB").arg(currentMB).arg(limitMB));
+            });
 }
 
 CADDemo::~CADDemo()
@@ -174,6 +184,82 @@ void CADDemo::processKeyPress(CameraMovement qtKey, float deltaTime)
     }
 }
 
+// ✅ 快捷键处理（Ctrl+Z, Ctrl+Y等）
+bool CADDemo::handleKeyboardShortcut(QKeyEvent* event) {
+    if (!event) return false;
+    
+    auto& cmdMgr = CommandManager::instance();
+    
+    // 检查修饰键
+    bool ctrlPressed = (event->modifiers() & Qt::ControlModifier);
+    bool shiftPressed = (event->modifiers() & Qt::ShiftModifier);
+    
+    if (ctrlPressed) {
+        switch (event->key()) {
+            case Qt::Key_Z:
+                if (!shiftPressed) {
+                    // Ctrl+Z: 撤销
+                    if (cmdMgr.undo()) {
+                        emit statusMessage("Undo: " + cmdMgr.getRedoText());
+                        documentDirty_ = true;
+                        return true;
+                    } else {
+                        emit statusMessage("Nothing to undo");
+                        return true;
+                    }
+                } else {
+                    // Ctrl+Shift+Z: 重做
+                    if (cmdMgr.redo()) {
+                        emit statusMessage("Redo: " + cmdMgr.getUndoText());
+                        documentDirty_ = true;
+                        return true;
+                    } else {
+                        emit statusMessage("Nothing to redo");
+                        return true;
+                    }
+                }
+                break;
+                
+            case Qt::Key_Y:
+                // Ctrl+Y: 重做
+                if (cmdMgr.redo()) {
+                    emit statusMessage("Redo: " + cmdMgr.getUndoText());
+                    documentDirty_ = true;
+                    return true;
+                } else {
+                    emit statusMessage("Nothing to redo");
+                    return true;
+                }
+                break;
+                
+            case Qt::Key_S:
+                // Ctrl+S: 保存（创建保存点）
+                cmdMgr.createSavePoint();
+                emit statusMessage("Document saved - Command history cleared");
+                return true;
+                
+            case Qt::Key_Delete:
+            case Qt::Key_D:
+                // Ctrl+D 或 Delete: 删除选中对象
+                if (selectionSystem_->hasSelection()) {
+                    deleteSelectedEntities();
+                    return true;
+                }
+                break;
+        }
+    }
+    
+    // 单独的Delete键
+    if (event->key() == Qt::Key_Delete && !ctrlPressed) {
+        if (selectionSystem_->hasSelection()) {
+            deleteSelectedEntities();
+            return true;
+        }
+    }
+    
+    return false; // 未处理
+}
+
 void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
 {
     if (!getWorldPosition(point, wpoint))
@@ -253,24 +339,34 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
             selectMode = SelectionSystem::SelectMode::TOGGLE;
         }
 
-        // ✅ 根据相机模式选择拾取方式
+        // ✅ 根据相机模式选择拾取方式 - 使用统一拾取方法
         std::optional<SelectionSystem::PickResult> pickResult;
 
-        // 单击选择
-        if (camera->is2D())
-        {
-            pickResult = selectionSystem_->pick2D(
-                wpoint,
-                viewportState_,
-                5.0f);
+        // ✅ 首先检查是否在MOVE模式且点击了Gizmo轴
+        if (cad_mode_ == DrawMode::MOVE && !gizmoAxisIds_.empty()) {
+            Ray ray = Ray::fromScreen(
+                point.x(), point.y(),
+                viewportState_.width, viewportState_.height,
+                viewportState_.view, viewportState_.proj);
+
+            int gizmoAxis = selectionSystem_->pickGizmoAxis(ray, gizmoSize_ * 0.5f);
+            if (gizmoAxis >= 0 && gizmoAxis < gizmoAxisIds_.size()) {
+                // 如果点击了Gizmo轴，创建一个对应的PickResult
+                pickResult = SelectionSystem::PickResult{gizmoAxisIds_[gizmoAxis], glm::vec3(0), 0.0f};
+            }
         }
-        else
-        {
-            // 3D 模式：使用屏幕投影的 2D 拾取（适用于所有实体类型包括 Box）
-            pickResult = selectionSystem_->pick2D(
-                wpoint,
-                viewportState_,
-                5.0f);
+        
+        // 如果没有拾取到Gizmo轴，使用常规拾取
+        if (!pickResult.has_value()) {
+            pickResult = selectionSystem_->pickUnified(point, viewportState_, 5.0f);
+        }
+
+        // ✅ 调试：检查hover和click的一致性
+        if (point == lastHoverPos_ && pickResult.has_value() && 
+            pickResult->entityId != lastHoveredId_) {
+            qDebug() << "⚠️  Hover/Click不一致！Hover:" << lastHoveredId_ 
+                     << "Click:" << pickResult->entityId 
+                     << "位置:" << point.x() << point.y();
         }
 
         // 处理拾取结果
@@ -307,14 +403,13 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
         }
 
         // 检查是否点击了 Gizmo 轴（暂时移除，因为GizmoAxis拾取未实现）
-        // TODO: 实现 Gizmo 轴拾取
-        /*
+        // ✅ 实现 Gizmo 轴拾取
         Ray ray = Ray::fromScreen(
             point.x(), point.y(),
             viewportState_.width, viewportState_.height,
             viewportState_.view, viewportState_.proj);
 
-        draggedAxisIndex_ = selectionSystem_->pickGizmoAxis(ray, gizmoSize_ * 0.1f);
+        draggedAxisIndex_ = selectionSystem_->pickGizmoAxis(ray, gizmoSize_ * 0.5f); // ✅ 放宽拾取容忍度
 
         if (draggedAxisIndex_ >= 0)
         {
@@ -325,7 +420,6 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
             const char *axisNames[] = {"X", "Y", "Z"};
             emit statusMessage(QString("Moving along %1 axis...").arg(axisNames[draggedAxisIndex_]));
         }
-        */
         break;
     }
     }
@@ -345,17 +439,25 @@ void CADDemo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoin
         // 清除之前的悬停状态
         selectionSystem_->clearHovered();
 
-        // 检测当前悬停的实体
+        // ✅ 检测当前悬停的实体 - 使用统一拾取方法
         std::optional<SelectionSystem::PickResult> pickResult;
 
-        if (camera->is2D())
-        {
-            pickResult = selectionSystem_->pick2D(wpoint, viewportState_, 5.0f);
+        // ✅ 首先检查是否在MOVE模式区域内且有Gizmo轴
+        if (cad_mode_ == DrawMode::MOVE && !gizmoAxisIds_.empty()) {
+            Ray ray = Ray::fromScreen(
+                point.x(), point.y(),
+                viewportState_.width, viewportState_.height,
+                viewportState_.view, viewportState_.proj);
+
+            int gizmoAxis = selectionSystem_->pickGizmoAxis(ray, gizmoSize_ * 0.5f);
+            if (gizmoAxis >= 0 && gizmoAxis < gizmoAxisIds_.size()) {
+                pickResult = SelectionSystem::PickResult{gizmoAxisIds_[gizmoAxis], glm::vec3(0), 0.0f};
+            }
         }
-        else
-        {
-            // 3D 模式：使用屏幕投影的 2D 拾取（和点击选择保持一致）
-            pickResult = selectionSystem_->pick2D(wpoint, viewportState_, 5.0f);
+        
+        // 如果没有拾取到Gizmo轴，使用常规拾取
+        if (!pickResult.has_value()) {
+            pickResult = selectionSystem_->pickUnified(point, viewportState_, 5.0f);
         }
 
         if (pickResult.has_value())
@@ -363,8 +465,48 @@ void CADDemo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoin
             selectionSystem_->setHovered(pickResult->entityId);
             documentDirty_ = true;
 
+            // ✅ 记录hover状态用于调试
+            lastHoveredId_ = pickResult->entityId;
+            lastHoverPos_ = point;
+
             // 显示实体信息
             emit statusMessage(QString("Hover: Entity %1").arg(pickResult->entityId));
+        }
+        else
+        {
+            lastHoveredId_ = EntityId(-1);
+        }
+        break;
+    }
+    
+    case DrawMode::MOVE:
+    {
+        // ✅ MOVE 模式：检测 Gizmo 轴的 hover 状态
+        if (!isTransforming_) // 只有在非拖拽状态下才检测 hover
+        {
+            // 清除之前的悬停状态
+            selectionSystem_->clearHovered();
+
+            // 检测 Gizmo 轴 hover
+            Ray ray = Ray::fromScreen(
+                point.x(), point.y(),
+                viewportState_.width, viewportState_.height,
+                viewportState_.view, viewportState_.proj);
+
+            int hoveredAxis = selectionSystem_->pickGizmoAxis(ray, gizmoSize_ * 0.5f);
+            
+            if (hoveredAxis >= 0)
+            {
+                // 找到对应的 Gizmo 轴实体并设置 hover
+                if (hoveredAxis < gizmoAxisIds_.size())
+                {
+                    selectionSystem_->setHovered(gizmoAxisIds_[hoveredAxis]);
+                    documentDirty_ = true;
+                    
+                    const char *axisNames[] = {"X", "Y", "Z"};
+                    emit statusMessage(QString("Hover: %1 Axis - Click to move along this axis").arg(axisNames[hoveredAxis]));
+                }
+            }
         }
         break;
     }
@@ -509,6 +651,9 @@ void CADDemo::processMouseRelease()
                                .arg(transformOffset_.x, 0, 'f', 2)
                                .arg(transformOffset_.y, 0, 'f', 2)
                                .arg(transformOffset_.z, 0, 'f', 2));
+
+        // ✅ 使用命令系统记录移动操作
+        executeMoveCommand();
 
         // 变换完成，标记为非脏数据
         documentDirty_ = true;
@@ -1094,10 +1239,15 @@ void CADDemo::createGizmo(const glm::vec3 &center)
     // 先销毁旧的 Gizmo
     destroyGizmo();
 
-    // 根据视口大小计算 Gizmo 大小（保持屏幕空间恒定大小）
+    // ✅ 根据选中物体的大小和视口大小计算 Gizmo 大小
     updateGizmoSize(viewportState_);
+    
+    // ✅ 根据选中实体的包围盒调整 Gizmo 大小
+    auto selectedEntities = selectionSystem_->getSelectedEntities();
+    float objectScale = calculateSelectionBoundingBoxSize(selectedEntities);
+    float adaptiveSize = std::max(gizmoSize_, objectScale * 0.3f); // 至少是物体大小的30%
 
-    // 定义三个轴：X/Y/Z
+    // 定义三个轴：X/Y/Z - 使用更明显的颜色
     glm::vec3 directions[] = {
         glm::vec3(1, 0, 0), // X 轴 - 红色
         glm::vec3(0, 1, 0), // Y 轴 - 绿色
@@ -1105,9 +1255,9 @@ void CADDemo::createGizmo(const glm::vec3 &center)
     };
 
     std::uint32_t colors[] = {
-        0xFF0000FF, // 红色
-        0x00FF00FF, // 绿色
-        0x0000FFFF  // 蓝色
+        0xFF4444FF, // 更亮的红色
+        0x44FF44FF, // 更亮的绿色
+        0x4444FFFF  // 更亮的蓝色
     };
 
     // 创建三个轴
@@ -1116,7 +1266,7 @@ void CADDemo::createGizmo(const glm::vec3 &center)
         EntityId axisId = document_->addGizmoAxis(
             center,
             directions[i],
-            gizmoSize_ * 0.8f, // 轴长度
+            adaptiveSize, // ✅ 使用自适应大小
             i,
             Style{colors[i]});
         gizmoAxisIds_.push_back(axisId);
@@ -1155,6 +1305,143 @@ void CADDemo::updateGizmoPosition(const glm::vec3 &center)
 void CADDemo::updateGizmoSize(const ViewportState &vp)
 {
     // 根据屏幕大小计算世界空间中的 Gizmo 大小
-    // 目标：Gizmo 在屏幕上保持 80 像素左右的大小
-    gizmoSize_ = 80.0f * vp.worldPerPixel;
+    // 目标：Gizmo 在屏幕上保持 120 像素左右的大小（增加了大小）
+    gizmoSize_ = 120.0f * vp.worldPerPixel;
+}
+
+float CADDemo::calculateSelectionBoundingBoxSize(const std::vector<Entity*>& entities) const
+{
+    if (entities.empty()) return 1.0f;
+    
+    // 计算所有选中实体的包围盒
+    glm::vec3 minPoint(std::numeric_limits<float>::max());
+    glm::vec3 maxPoint(std::numeric_limits<float>::lowest());
+    
+    for (const auto* entity : entities) {
+        if (!entity || entity->isGizmo) continue;
+        
+        switch (entity->type) {
+            case EntityType::Line: {
+                if (auto* line = std::get_if<Line>(&entity->geom)) {
+                    minPoint = glm::min(minPoint, glm::min(line->p0, line->p1));
+                    maxPoint = glm::max(maxPoint, glm::max(line->p0, line->p1));
+                }
+                break;
+            }
+            case EntityType::Circle: {
+                if (auto* circle = std::get_if<Circle>(&entity->geom)) {
+                    glm::vec3 r(circle->r);
+                    minPoint = glm::min(minPoint, circle->c - r);
+                    maxPoint = glm::max(maxPoint, circle->c + r);
+                }
+                break;
+            }
+            case EntityType::Box: {
+                if (auto* box = std::get_if<Box>(&entity->geom)) {
+                    float half = box->size * 0.5f;
+                    glm::vec3 halfVec(half);
+                    minPoint = glm::min(minPoint, box->center - halfVec);
+                    maxPoint = glm::max(maxPoint, box->center + halfVec);
+                }
+                break;
+            }
+            case EntityType::Polyline: {
+                if (auto* polyline = std::get_if<Polyline>(&entity->geom)) {
+                    for (const auto& pt : polyline->pts) {
+                        minPoint = glm::min(minPoint, pt);
+                        maxPoint = glm::max(maxPoint, pt);
+                    }
+                }
+                break;
+            }
+            // 可以添加其他类型...
+        }
+    }
+    
+    // 计算包围盒的最大尺寸
+    glm::vec3 size = maxPoint - minPoint;
+    return std::max({size.x, size.y, size.z, 0.5f}); // 最小返回 0.5
+}
+
+// ============================================
+// ✅ v0.4: 命令系统集成
+// ============================================
+
+void CADDemo::deleteSelectedEntities() {
+    auto selectedIds = selectionSystem_->getSelectedIds();
+    if (selectedIds.empty()) {
+        emit statusMessage("No entities selected to delete");
+        return;
+    }
+    
+    // 转换为vector（命令系统需要vector类型）
+    std::vector<EntityId> idVector(selectedIds.begin(), selectedIds.end());
+    
+    // 创建删除命令
+    auto deleteCmd = std::make_unique<DeleteEntityCommand>(document_.get(), idVector);
+    
+    // 执行命令
+    auto& cmdMgr = CommandManager::instance();
+    if (cmdMgr.executeCommand(std::move(deleteCmd))) {
+        selectionSystem_->clearSelection();
+        documentDirty_ = true;
+        emit statusMessage(QString("Deleted %1 entities").arg(selectedIds.size()));
+    } else {
+        emit statusMessage("Failed to delete entities");
+    }
+}
+
+void CADDemo::executeMoveCommand() {
+    // 检查是否有实际的移动
+    const float epsilon = 1e-6f;
+    if (glm::length(transformOffset_) < epsilon) {
+        return; // 没有移动，不创建命令
+    }
+    
+    auto selectedIds = selectionSystem_->getSelectedIds();
+    if (selectedIds.empty()) {
+        return;
+    }
+    
+    // 转换为vector（命令系统需要vector类型）
+    std::vector<EntityId> idVector(selectedIds.begin(), selectedIds.end());
+    
+    // 创建移动命令
+    auto moveCmd = std::make_unique<MoveCommand>(document_.get(), idVector, transformOffset_);
+    
+    // 由于移动已经在实时预览中执行过了，我们需要先撤销然后通过命令执行
+    // 撤销实时预览的移动
+    auto selectedEntities = selectionSystem_->getSelectedEntities();
+    Transform::translateEntities(selectedEntities, -transformOffset_);
+    
+    // 通过命令系统执行移动
+    auto& cmdMgr = CommandManager::instance();
+    if (cmdMgr.executeCommand(std::move(moveCmd), true)) { // 允许合并连续移动
+        // 重置移动状态
+        transformOffset_ = glm::vec3(0.0f);
+    } else {
+        // 如果命令执行失败，恢复实时预览的移动
+        Transform::translateEntities(selectedEntities, transformOffset_);
+        emit statusMessage("Failed to record move command");
+    }
+}
+
+void CADDemo::onCommandStackChanged() {
+    auto& cmdMgr = CommandManager::instance();
+    
+    // 更新状态栏显示
+    QString statusText;
+    if (cmdMgr.canUndo()) {
+        statusText += QString("[%1] ").arg(cmdMgr.getUndoText());
+    }
+    if (cmdMgr.canRedo()) {
+        statusText += QString("| %1").arg(cmdMgr.getRedoText());
+    }
+    
+    if (!statusText.isEmpty()) {
+        emit statusMessage(statusText);
+    }
+    
+    // 如果有UI的话，这里可以更新undo/redo按钮状态
+    // updateUndoRedoButtons();
 }

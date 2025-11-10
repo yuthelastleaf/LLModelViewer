@@ -13,6 +13,7 @@
 
 // 前向声明
 class Demo;
+class CADDemo; // ✅ 新增：CADDemo前向声明
 class QDockWidget;
 
 /**

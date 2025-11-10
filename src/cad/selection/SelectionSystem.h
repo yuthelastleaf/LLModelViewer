@@ -68,6 +68,14 @@ public:
         float pixelThreshold = 5.0f) const;
     
     /**
+     * ✅ 统一拾取方法：确保hover和click使用完全相同的逻辑
+     */
+    std::optional<PickResult> pickUnified(
+        const QPoint& screenPos,
+        const ViewportState& vp,
+        float pixelThreshold = 5.0f) const;
+    
+    /**
      * 2D 模式下拾取所有实体
      */
     std::vector<PickResult> pickAll2D(
@@ -90,6 +98,14 @@ public:
         const ViewportState& vp,
         const class WorkPlane& workPlane,
         BoxSelectMode mode = BoxSelectMode::INTERSECT) const;
+    
+    /**
+     * Gizmo 轴拾取（用于移动变换）
+     * @param ray 射线
+     * @param threshold 距离阈值
+     * @return 拾取到的轴索引（0=X, 1=Y, 2=Z），-1 表示未拾取到
+     */
+    int pickGizmoAxis(const class Ray& ray, float threshold = 0.1f) const;
 
     // ============================================
     // 选择状态管理

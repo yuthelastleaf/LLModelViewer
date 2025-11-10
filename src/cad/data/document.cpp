@@ -174,3 +174,53 @@ EntityId Document::addGizmoAxis(const glm::vec3& origin, const glm::vec3& direct
     e.isGizmo = true;  // 标记为 Gizmo
     return add(std::move(e));
 }
+
+// ============================================
+// ✅ v0.4: 命令系统支持方法
+// ============================================
+
+std::unique_ptr<Entity> Document::removeAndTake(EntityId id) {
+    auto it = map_.find(id);
+    if (it == map_.end()) {
+        return nullptr;
+    }
+    
+    // 复制实体到智能指针
+    auto entity = std::make_unique<Entity>(it->second);
+    
+    // 通知删除回调
+    if (onRemove_) {
+        onRemove_(id);
+    }
+    
+    // 从映射中删除
+    map_.erase(it);
+    
+    return entity;
+}
+
+EntityId Document::addWithId(EntityId id, std::unique_ptr<Entity> e) {
+    if (!e || map_.find(id) != map_.end()) {
+        return 0; // ID已存在或实体为空
+    }
+    
+    e->id = id;
+    e->dirty = true;  // 恢复的实体标记为脏，需要重新渲染
+    
+    // 更新next_以避免ID冲突
+    if (id >= next_) {
+        next_ = id + 1;
+    }
+    
+    EntityId resultId = e->id;
+    map_[id] = *e;  // 复制实体内容
+    
+    return resultId;
+}
+
+void Document::notifyEntityChanged(EntityId id) {
+    auto it = map_.find(id);
+    if (it != map_.end()) {
+        it->second.dirty = true;  // 标记需要重新上传到GPU
+    }
+}

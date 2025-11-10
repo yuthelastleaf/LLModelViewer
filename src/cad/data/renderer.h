@@ -69,8 +69,9 @@ struct GpuBatch {
     GLenum drawMode = GL_LINES;  // GL_LINES, GL_LINE_STRIP, GL_TRIANGLES
     // ✅ v0.2: 选择状态
     bool selected = false;    // 是否被选中
-    bool hovered = false;   // ✅ 悬停状态
-    bool doted = false;     // 是否虚线状态
+    bool hovered = false;     // ✅ 悬停状态
+    bool doted = false;       // 是否虚线状态
+    bool isGizmo = false;     // ✅ 是否为 Gizmo 轴（用于特殊渲染）
 };
 
 class Renderer : protected QOpenGLFunctions_3_3_Core {
@@ -153,6 +154,9 @@ private:
     void uploadArc_(EntityId id, const Arc& A, std::uint32_t rgba, const ViewportState& vp);
     void uploadBox_(EntityId id, const Box& B, std::uint32_t rgba);
     void uploadGizmoAxis_(EntityId id, const GizmoAxis& G, std::uint32_t rgba, const ViewportState& vp);
+
+    // 渲染 helpers
+    void renderBatch(const GpuBatch& batch, const glm::mat4& mvp, const ViewportState& vp);
 
     // 折线细分：保证屏幕误差 ~ 0.5 像素
     static std::vector<glm::vec3> tessellateCircle(const Circle& C, float worldEps);

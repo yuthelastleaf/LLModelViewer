@@ -7,6 +7,8 @@
 #include "../cad/data/GridAxisHelper.h"
 #include "../cad/selection/SelectionSystem.h"
 #include "../cad/transform/Transform.h"
+#include "../cad/command/CommandManager.h"
+#include "../cad/command/EntityCommands.h"
 #include "util/RayUtils.h"
 #include "util/WorkPlane.h"
 #include "util/RenderStyleManager.h"
@@ -42,6 +44,7 @@ public:
     // ============================================
     
     void processKeyPress(CameraMovement qtKey, float deltaTime) override;
+    bool handleKeyboardShortcut(QKeyEvent* event); // ✅ 新增：快捷键处理（Ctrl+Z等）
     void processMousePress(QPoint point, glm::vec3 wpoint) override;
     void processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoint, glm::vec3 delta_wpoint) override;
     void processMouseRelease() override;
@@ -95,6 +98,9 @@ public slots:
     void selectAll();
     void invertSelection();
     void deleteSelected();
+
+    // ✅ v0.4: 命令系统槽
+    void onCommandStackChanged(); // 响应命令栈变化
 
 signals:
     void documentChanged();
@@ -180,11 +186,20 @@ private:
     glm::vec3 transformOffset_;             // 累积的变换偏移
     float gizmoSize_ = 1.0f;                // Gizmo 大小（世界单位）
     
+    // ✅ 调试：追踪hover和click的一致性
+    mutable EntityId lastHoveredId_ = EntityId(-1);
+    mutable QPoint lastHoverPos_;
+    
+    // ✅ v0.4: 命令系统集成
+    void deleteSelectedEntities();      // 删除选中实体（使用命令）
+    void executeMoveCommand();          // 完成移动操作（使用命令）
+    
     // Gizmo 辅助方法
     void createGizmo(const glm::vec3& center);
     void destroyGizmo();
     void updateGizmoPosition(const glm::vec3& center);
     void updateGizmoSize(const ViewportState& vp);
+    float calculateSelectionBoundingBoxSize(const std::vector<Entity*>& entities) const;
 };
 
 #endif // CADDEMO_H

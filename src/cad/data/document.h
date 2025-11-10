@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <vector>
 #include <variant>
+#include <memory>
 #include <glm/glm.hpp>
 
 using EntityId = std::uint64_t;
@@ -56,6 +57,8 @@ struct Entity {
     bool isGizmo = false;      // 是否是 Gizmo（不参与常规选择）
 };
 
+using EntityPtr = std::unique_ptr<Entity>;
+
 class Document {
 public:
     const Entity* get(EntityId id) const;
@@ -67,6 +70,11 @@ public:
     EntityId add(Entity e);
     bool     remove(EntityId id);
     void     clear();
+    
+    // ✅ v0.4: 命令系统支持
+    std::unique_ptr<Entity> removeAndTake(EntityId id);           // 删除并返回实体（用于撤销）
+    EntityId addWithId(EntityId id, std::unique_ptr<Entity> e);   // 用指定ID添加实体（用于撤销）
+    void notifyEntityChanged(EntityId id);                       // 通知实体变化（用于渲染更新）
     
     // ✅ 删除回调：在实体被删除时通知外部（如Renderer）
     using RemoveCallback = std::function<void(EntityId)>;

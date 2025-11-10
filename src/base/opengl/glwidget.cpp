@@ -1,5 +1,6 @@
 #include "GLWidget.h"
 #include "../Demo.h"
+#include "../caddemo.h" // ✅ 新增：为了支持dynamic_cast到CADDemo
 #include "../camera/Camera.h"
 #include <QMouseEvent>
 #include <QKeyEvent>
@@ -600,6 +601,17 @@ void GLWidget::paintGL()
 
 void GLWidget::keyPressEvent(QKeyEvent *event)
 {
+    // ✅ 首先尝试Demo的快捷键处理
+    if (currentDemo) {
+        // 检查是否是CADDemo（支持快捷键）
+        if (auto cadDemo = dynamic_cast<CADDemo*>(currentDemo.get())) {
+            if (cadDemo->handleKeyboardShortcut(event)) {
+                return; // 快捷键已处理，不继续传递
+            }
+        }
+    }
+    
+    // 常规键盘输入处理
     if (input)
     {
         input->onKeyPress(event);

@@ -1,5 +1,6 @@
 #include "SelectionSystem.h"
 #include "../../base/util/WorkPlane.h"
+#include "../../base/util/RayUtils.h"
 #include <algorithm>
 #include <cmath>
 #include <QDebug>
@@ -61,6 +62,22 @@ std::optional<SelectionSystem::PickResult> SelectionSystem::pick2D(
     return results.front();
 }
 
+// ✅ 统一拾取方法：确保hover和click使用完全相同的逻辑
+std::optional<SelectionSystem::PickResult> SelectionSystem::pickUnified(
+    const QPoint& screenPos,
+    const ViewportState& vp,
+    float pixelThreshold) const {
+    
+    // 统一的坐标转换逻辑
+    glm::vec3 worldPos = vp.screenToWorld(screenPos, 0.0f);
+    
+    // 调试信息：确保坐标转换一致
+    // qDebug() << "PickUnified: screen" << screenPos.x() << screenPos.y() << "-> world" << worldPos.x << worldPos.y << worldPos.z;
+    
+    // 使用相同的拾取算法
+    return pick2D(worldPos, vp, pixelThreshold);
+}
+
 std::vector<SelectionSystem::PickResult> SelectionSystem::pickAll2D(
     const glm::vec3& worldPos,
     const ViewportState& vp,
@@ -68,10 +85,15 @@ std::vector<SelectionSystem::PickResult> SelectionSystem::pickAll2D(
     
     std::vector<PickResult> results;
     
+    // ✅ 确保世界阈值计算的稳定性
     float worldThreshold = pixelThreshold * vp.worldPerPixel;
     
+    // 添加最小阈值防止过小的拾取区域
+    const float minWorldThreshold = 1e-6f;
+    worldThreshold = std::max(worldThreshold, minWorldThreshold);
+    
     for (const auto* entity : document_->all()) {
-        if (!entity || entity->isGizmo) continue;
+        if (!entity) continue;
         
         glm::vec3 closestPoint;
         float distance = std::numeric_limits<float>::max();
@@ -111,6 +133,20 @@ std::vector<SelectionSystem::PickResult> SelectionSystem::pickAll2D(
                 }
                 break;
             }
+            
+            case EntityType::GizmoAxis: {
+                if (auto* gizmo = std::get_if<GizmoAxis>(&entity->geom)) {
+                    // ✅ GizmoAxis 拾取：将轴视为一条线段
+                    Line axisLine;
+                    axisLine.p0 = gizmo->origin;
+                    axisLine.p1 = gizmo->origin + gizmo->direction * gizmo->length;
+                    distance = distanceToLine2D(worldPos, axisLine, vp, &closestPoint);
+                    
+                    // ✅ 为 Gizmo 轴增加额外的拾取容忍度，使其更容易选中
+                    distance *= 0.3f; // 等效于将拾取范围扩大约3倍
+                }
+                break;
+            }
         }
         
         if (distance <= worldThreshold) {
@@ -118,7 +154,16 @@ std::vector<SelectionSystem::PickResult> SelectionSystem::pickAll2D(
         }
     }
     
-    std::sort(results.begin(), results.end());
+    // ✅ 稳定排序：确保相同距离的实体有一致的顺序
+    std::sort(results.begin(), results.end(), [](const PickResult& a, const PickResult& b) {
+        // 首先按距离排序
+        const float eps = 1e-6f; // 浮点比较精度
+        if (std::abs(a.distance - b.distance) > eps) {
+            return a.distance < b.distance;
+        }
+        // 距离相同时按实体ID排序，确保稳定性
+        return a.entityId < b.entityId;
+    });
     
     return results;
 }
@@ -208,6 +253,55 @@ std::vector<EntityId> SelectionSystem::pickByBox3D(
     // ✅ 3D模式下的框选：使用屏幕投影的2D逻辑（简化实现）
     // 对于大多数CAD操作，这种方法已经足够
     return pickByBox2D(boxEntityId, mode);
+}
+
+int SelectionSystem::pickGizmoAxis(const Ray& ray, float threshold) const {
+    int closestAxis = -1;
+    float minDistance = threshold;
+    
+    // 遍历所有 GizmoAxis 实体
+    for (const auto* entity : document_->all()) {
+        if (!entity || entity->type != EntityType::GizmoAxis) {
+            continue;
+        }
+        
+        auto* gizmo = std::get_if<GizmoAxis>(&entity->geom);
+        if (!gizmo) continue;
+        
+        // 计算射线到轴线的距离
+        glm::vec3 axisEnd = gizmo->origin + gizmo->direction * gizmo->length;
+        
+        // 点到线段的最短距离计算
+        glm::vec3 v = axisEnd - gizmo->origin;
+        glm::vec3 w = ray.getOrigin() - gizmo->origin;
+        
+        float c1 = glm::dot(w, v);
+        float c2 = glm::dot(v, v);
+        
+        float t = 0.0f;
+        if (c2 > 1e-6f) {
+            t = glm::clamp(c1 / c2, 0.0f, 1.0f);
+        }
+        
+        glm::vec3 closestPointOnAxis = gizmo->origin + t * v;
+        
+        // 计算射线上最近点到轴的距离
+        glm::vec3 rayDir = ray.getDirection();
+        glm::vec3 toAxis = closestPointOnAxis - ray.getOrigin();
+        float rayT = glm::dot(toAxis, rayDir) / glm::dot(rayDir, rayDir);
+        
+        if (rayT > 0.0f) { // 只考虑射线正方向
+            glm::vec3 closestPointOnRay = ray.getOrigin() + rayT * rayDir;
+            float distance = glm::length(closestPointOnRay - closestPointOnAxis);
+            
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestAxis = gizmo->axisIndex;
+            }
+        }
+    }
+    
+    return closestAxis;
 }
 
 // ============================================
