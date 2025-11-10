@@ -13,11 +13,25 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 CADDemo::CADDemo(QObject *parent)
-    : Demo(parent), document_(std::make_unique<Document>()), renderer_(std::make_unique<Renderer>()), gridRenderer_(std::make_unique<GridRenderer>()), axisRenderer_(std::make_unique<AxisRenderer>()), showGrid_(true), showAxis_(true), documentDirty_(true), isPanning_(false), cad_mode_(DrawMode::VIEW), cur_draw_(0), selectionManager_(std::make_unique<SelectionManager>(document_.get(), this)), picker_(std::make_unique<Picker>()), cur_select_box_(0), isBoxSelecting_(false), isTransforming_(false), draggedAxisIndex_(-1)
+    : Demo(parent), 
+      document_(std::make_unique<Document>()), 
+      renderer_(std::make_unique<Renderer>()), 
+      gridRenderer_(std::make_unique<GridRenderer>()), 
+      axisRenderer_(std::make_unique<AxisRenderer>()), 
+      showGrid_(true), 
+      showAxis_(true), 
+      documentDirty_(true), 
+      isPanning_(false), 
+      cad_mode_(DrawMode::VIEW), 
+      cur_draw_(0), 
+      selectionSystem_(std::make_unique<SelectionSystem>(document_.get(), this)), 
+      cur_select_box_(0), 
+      isBoxSelecting_(false), 
+      isTransforming_(false), 
+      draggedAxisIndex_(-1)
 {
     // ✅ 默认设置为 2D CAD 俯视图
     camera->SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
-    // camera->SetTopView(10.0f);
     camera->SetTopView(10.0f);
 
     workPlane_ = std::make_unique<WorkPlane>();
@@ -35,14 +49,14 @@ CADDemo::CADDemo(QObject *parent)
     }
 
     // ✅ 连接选择信号
-    connect(selectionManager_.get(), &SelectionManager::selectionChanged,
+    connect(selectionSystem_.get(), &SelectionSystem::selectionChanged,
             this, [this](int count)
             { 
                 emit statusMessage(QString("Selected: %1 entities").arg(count));
                 
                 // ✅ v0.3: 更新 Gizmo 显示
                 if (count > 0 && cad_mode_ == DrawMode::MOVE) {
-                    auto selectedEntities = selectionManager_->getSelectedEntities();
+                    auto selectedEntities = selectionSystem_->getSelectedEntities();
                     glm::vec3 center = Transform::getSelectionCenter(selectedEntities);
                     createGizmo(center);
                 } else {
@@ -65,6 +79,9 @@ CADDemo::~CADDemo()
 
 void CADDemo::initialize()
 {
+    // ✅ 初始化样式管理器
+    RenderStyleManager::instance().initializeDefaultStyles();
+    
     if (!renderer_->initialize())
     {
         emit statusMessage("Failed to initialize renderer");
@@ -92,8 +109,15 @@ void CADDemo::render()
     {
         // 窗口大小改变时强制重建，因为投影矩阵变化需要重新细分圆弧
         renderer_->syncFromDocument(*document_, viewportState_, viewportResized_);
+        
+        // ✅ 同步选择状态到Renderer（支持多实体悬停）
+        renderer_->updateAllEntityStates(
+            selectionSystem_->getSelectedIds(), 
+            selectionSystem_->getHoveredIds()
+        );
 
         // 清除所有实体的脏标志
+        document_->clearAllDirtyFlags();
         document_->clearAllDirtyFlags();
 
         documentDirty_ = false;
@@ -209,6 +233,7 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
             break;
         }
         EntityId boxId = document_->addBox(centerPos, 1.0f, boxStyle);
+        documentDirty_ = true; // ✅ 标记需要立即渲染
         emit documentChanged();
     }
     break;
@@ -218,50 +243,47 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
         Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
 
         // 判断选择模式
-        SelectionManager::SelectMode selectMode = SelectionManager::SelectMode::REPLACE;
+        SelectionSystem::SelectMode selectMode = SelectionSystem::SelectMode::REPLACE;
         if (modifiers & Qt::ShiftModifier)
         {
-            selectMode = SelectionManager::SelectMode::ADD;
+            selectMode = SelectionSystem::SelectMode::ADD;
         }
         else if (modifiers & Qt::ControlModifier)
         {
-            selectMode = SelectionManager::SelectMode::TOGGLE;
+            selectMode = SelectionSystem::SelectMode::TOGGLE;
         }
 
         // ✅ 根据相机模式选择拾取方式
-        std::optional<Picker::PickResult> pickResult;
+        std::optional<SelectionSystem::PickResult> pickResult;
 
         // 单击选择
         if (camera->is2D())
         {
-            pickResult = picker_->pick2D(
+            pickResult = selectionSystem_->pick2D(
                 wpoint,
-                *document_,
                 viewportState_,
                 5.0f);
         }
         else
         {
-            // 3D 模式：射线拾取
-            pickResult = picker_->pick(
-                point.x(), point.y(),
-                *document_,
+            // 3D 模式：使用屏幕投影的 2D 拾取（适用于所有实体类型包括 Box）
+            pickResult = selectionSystem_->pick2D(
+                wpoint,
                 viewportState_,
-                0.1f // 拾取阈值
-            );
+                5.0f);
         }
 
         // 处理拾取结果
         if (pickResult.has_value())
         {
-            selectionManager_->selectWithMode(pickResult->entityId, selectMode);
+            selectionSystem_->selectWithMode(pickResult->entityId, selectMode);
             documentDirty_ = true;
         }
         else
         {
-            if (selectMode == SelectionManager::SelectMode::REPLACE)
+            if (selectMode == SelectionSystem::SelectMode::REPLACE)
             {
-                selectionManager_->clearSelection();
+                selectionSystem_->clearSelection();
                 documentDirty_ = true;
             }
         }
@@ -272,30 +294,30 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
     {
         cur_select_box_ = document_->addRectangle(wpoint, wpoint, true, Style::fromRGBA(255, 255, 255, 255), true);
         isBoxSelecting_ = true;
-        document_->clearAllSelectedFlags();
         break;
     }
 
     case DrawMode::MOVE:
     {
         // ✅ v0.3: 移动模式
-        if (!selectionManager_->hasSelection())
+        if (!selectionSystem_->hasSelection())
         {
             emit statusMessage("No selection to move");
             break;
         }
 
-        // 检查是否点击了 Gizmo 轴
+        // 检查是否点击了 Gizmo 轴（暂时移除，因为GizmoAxis拾取未实现）
+        // TODO: 实现 Gizmo 轴拾取
+        /*
         Ray ray = Ray::fromScreen(
             point.x(), point.y(),
             viewportState_.width, viewportState_.height,
             viewportState_.view, viewportState_.proj);
 
-        draggedAxisIndex_ = picker_->pickGizmoAxis(ray, *document_, gizmoSize_ * 0.1f);
+        draggedAxisIndex_ = selectionSystem_->pickGizmoAxis(ray, gizmoSize_ * 0.1f);
 
         if (draggedAxisIndex_ >= 0)
         {
-            // 开始变换
             isTransforming_ = true;
             transformStartPos_ = wpoint;
             transformOffset_ = glm::vec3(0.0f);
@@ -303,6 +325,7 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
             const char *axisNames[] = {"X", "Y", "Z"};
             emit statusMessage(QString("Moving along %1 axis...").arg(axisNames[draggedAxisIndex_]));
         }
+        */
         break;
     }
     }
@@ -320,38 +343,28 @@ void CADDemo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoin
     case DrawMode::SELECT:
     {
         // 清除之前的悬停状态
-        for (auto *entity : document_->all())
-        {
-            if (entity && entity->hovered)
-            {
-                entity->hovered = false;
-                entity->dirty = true;
-            }
-        }
+        selectionSystem_->clearHovered();
 
         // 检测当前悬停的实体
-        std::optional<Picker::PickResult> pickResult;
+        std::optional<SelectionSystem::PickResult> pickResult;
 
         if (camera->is2D())
         {
-            pickResult = picker_->pick2D(wpoint, *document_, viewportState_, 5.0f);
+            pickResult = selectionSystem_->pick2D(wpoint, viewportState_, 5.0f);
         }
         else
         {
-            pickResult = picker_->pick(point.x(), point.y(), *document_, viewportState_, 0.1f);
+            // 3D 模式：使用屏幕投影的 2D 拾取（和点击选择保持一致）
+            pickResult = selectionSystem_->pick2D(wpoint, viewportState_, 5.0f);
         }
 
         if (pickResult.has_value())
         {
-            if (Entity *entity = document_->get(pickResult->entityId))
-            {
-                entity->hovered = true;
-                entity->dirty = true;
-                documentDirty_ = true;
+            selectionSystem_->setHovered(pickResult->entityId);
+            documentDirty_ = true;
 
-                // 显示实体信息
-                emit statusMessage(QString("Hover: Entity %1").arg(pickResult->entityId));
-            }
+            // 显示实体信息
+            emit statusMessage(QString("Hover: Entity %1").arg(pickResult->entityId));
         }
         break;
     }
@@ -405,20 +418,24 @@ void CADDemo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoin
             if (camera->is2D())
             {
                 // 2D 模式：直接在屏幕空间框选
-                picker_->selectByBox2D(
+                std::vector<EntityId> boxSelectedIds = selectionSystem_->pickByBox2D(
                     cur_select_box_,
-                    *document_,
-                    Picker::BoxSelectMode::INTERSECT);
+                    SelectionSystem::BoxSelectMode::INTERSECT);
+                
+                // ✅ 设置悬停状态（预览）- 支持多实体悬停
+                selectionSystem_->setHovered(boxSelectedIds);
             }
             else
             {
                 // 3D 模式：在工作平面上使用射线投影框选
-                picker_->selectByBox3D(
+                std::vector<EntityId> boxSelectedIds = selectionSystem_->pickByBox3D(
                     cur_select_box_,
-                    *document_,
                     viewportState_,
                     *workPlane_,
-                    Picker::BoxSelectMode::INTERSECT);
+                    SelectionSystem::BoxSelectMode::INTERSECT);
+                
+                // ✅ 3D 模式也设置悬停预览
+                selectionSystem_->setHovered(boxSelectedIds);
             }
 
             documentDirty_ = true; // ✅ 标记需要重新同步
@@ -457,7 +474,7 @@ void CADDemo::processMouseMove(QPoint point, QPoint delta_point, glm::vec3 wpoin
             transformOffset_ = currentOffset;
 
             // 应用到选中的实体
-            auto selectedEntities = selectionManager_->getSelectedEntities();
+            auto selectedEntities = selectionSystem_->getSelectedEntities();
             Transform::translateEntities(selectedEntities, deltaOffset);
 
             // 更新 Gizmo 位置
@@ -514,28 +531,38 @@ void CADDemo::processMouseRelease()
             return;
         }
 
-        std::vector<EntityId> selectedIds = picker_->selectByBox2D(
+        std::vector<EntityId> selectedIds = selectionSystem_->pickByBox2D(
             cur_select_box_,
-            *document_,
-            Picker::BoxSelectMode::INTERSECT);
+            SelectionSystem::BoxSelectMode::INTERSECT);
 
         Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
-        SelectionManager::SelectMode selectMode = SelectionManager::SelectMode::REPLACE;
+        SelectionSystem::SelectMode selectMode = SelectionSystem::SelectMode::REPLACE;
 
         if (modifiers & Qt::ShiftModifier)
         {
-            selectMode = SelectionManager::SelectMode::ADD;
+            selectMode = SelectionSystem::SelectMode::ADD;
         }
         else if (modifiers & Qt::ControlModifier)
         {
-            selectMode = SelectionManager::SelectMode::TOGGLE;
+            selectMode = SelectionSystem::SelectMode::TOGGLE;
         }
 
         if (!selectedIds.empty())
         {
             // 设置选中状态
-            selectionManager_->selectWithMode(selectedIds, selectMode);
+            selectionSystem_->selectWithMode(selectedIds, selectMode);
             documentDirty_ = true;
+        }
+        else
+        {
+            // ✅ 框选没有选到任何对象
+            if (selectMode == SelectionSystem::SelectMode::REPLACE)
+            {
+                // 替换模式：清空选择
+                selectionSystem_->clearSelection();
+                documentDirty_ = true;
+            }
+            // ADD 和 TOGGLE 模式：保持现有选择不变
         }
 
         // 删除选择框
@@ -714,9 +741,9 @@ void CADDemo::onDrawModeChanged(int id)
 
     case DrawMode::MOVE:
         emit statusMessage("Move tool active - Select objects to move");
-        if (selectionManager_->hasSelection())
+        if (selectionSystem_->hasSelection())
         {
-            auto selectedEntities = selectionManager_->getSelectedEntities();
+            auto selectedEntities = selectionSystem_->getSelectedEntities();
             glm::vec3 center = Transform::getSelectionCenter(selectedEntities);
             createGizmo(center);
         }
@@ -992,25 +1019,25 @@ const char *CADDemo::drawModeToString(DrawMode mode)
 
 void CADDemo::clearSelection()
 {
-    selectionManager_->clearSelection();
+    selectionSystem_->clearSelection();
     documentDirty_ = true;
 }
 
 void CADDemo::selectAll()
 {
-    selectionManager_->selectAll();
+    selectionSystem_->selectAll();
     documentDirty_ = true;
 }
 
 void CADDemo::invertSelection()
 {
-    selectionManager_->invertSelection();
+    selectionSystem_->invertSelection();
     documentDirty_ = true;
 }
 
 void CADDemo::deleteSelected()
 {
-    auto selectedIds = selectionManager_->getSelectedIds();
+    auto selectedIds = selectionSystem_->getSelectedIds();
 
     if (selectedIds.empty())
     {
@@ -1024,7 +1051,7 @@ void CADDemo::deleteSelected()
         renderer_->removeBatch(id);
     }
 
-    selectionManager_->clearSelection();
+    selectionSystem_->clearSelection();
     documentDirty_ = true;
 
     emit statusMessage(QString("Deleted %1 entities").arg(selectedIds.size()));
@@ -1037,8 +1064,13 @@ void CADDemo::deleteSelected()
 
 bool CADDemo::getWorldPosition(const QPoint &screenPos, glm::vec3 &outWorldPos) const
 {
-    bool flag = true;
-    if (!camera->is2D())
+    if (camera->is2D())
+    {
+        // 2D 模式：直接使用屏幕坐标转世界坐标
+        outWorldPos = viewportState_.screenToWorld(screenPos, 0.0f);
+        return true;
+    }
+    else
     {
         // 3D 模式：射线与工作平面求交
         Ray ray = Ray::fromScreen(
@@ -1046,12 +1078,11 @@ bool CADDemo::getWorldPosition(const QPoint &screenPos, glm::vec3 &outWorldPos) 
             viewportState_.width, viewportState_.height,
             viewportState_.view, viewportState_.proj);
 
-        flag = workPlane_->rayIntersection(
+        return workPlane_->rayIntersection(
             ray.getOrigin(),
             ray.getDirection(),
             outWorldPos);
     }
-    return flag;
 }
 
 // ============================================

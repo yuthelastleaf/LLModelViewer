@@ -1,7 +1,9 @@
 #pragma once
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <memory>
+#include <optional>
 #include <QOpenGLFunctions_3_3_Core>
 #include <QPoint>
 #include "../../base/util/shader.h"
@@ -86,6 +88,11 @@ public:
 
     // 绘制所有批次
     void draw(const ViewportState& vp);
+    
+    // ✅ 新增：更新实体的选择/悬停状态（由SelectionSystem调用）
+    void updateEntityState(EntityId id, bool selected, bool hovered);
+    void updateAllEntityStates(const std::unordered_set<EntityId>& selectedIds, 
+                               const std::unordered_set<EntityId>& hoveredIds);
 
     // 低阶画线（供网格/坐标轴等临时使用）
     void drawLineStrip(const std::vector<glm::vec3>& pts, std::uint32_t rgba, const ViewportState& vp);

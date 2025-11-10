@@ -157,10 +157,8 @@ set(CAD_BASE_SOURCES
     src/cad/data/renderer.cpp
     src/cad/data/GridAxisHelper.h
     src/cad/data/GridAxisHelper.cpp
-    src/cad/selection/Picker.cpp
-    src/cad/selection/Picker.h
-    src/cad/selection/SelectionManager.cpp
-    src/cad/selection/SelectionManager.h
+    src/cad/selection/SelectionSystem.cpp
+    src/cad/selection/SelectionSystem.h
     src/cad/transform/Transform.h
     src/cad/transform/Transform.cpp
 )
@@ -183,6 +181,8 @@ set(UTILITY_SOURCES
     src/base/util/WorkPlane.cpp
     src/base/util/RayUtils.h
     src/base/util/RayUtils.cpp
+    src/base/util/RenderStyleManager.h
+    src/base/util/RenderStyleManager.cpp
 )
 
 # UI 控件

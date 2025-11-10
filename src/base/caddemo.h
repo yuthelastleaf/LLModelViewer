@@ -5,11 +5,11 @@
 #include "../cad/data/document.h"
 #include "../cad/data/renderer.h"
 #include "../cad/data/GridAxisHelper.h"
-#include "../cad/selection/Picker.h"
-#include "../cad/selection/SelectionManager.h"
+#include "../cad/selection/SelectionSystem.h"
 #include "../cad/transform/Transform.h"
 #include "util/RayUtils.h"
 #include "util/WorkPlane.h"
+#include "util/RenderStyleManager.h"
 #include <memory>
 
 /**
@@ -166,9 +166,8 @@ private:
 
     std::unique_ptr<WorkPlane> workPlane_;
 
-    // ✅ v0.2: 选择系统
-    std::unique_ptr<SelectionManager> selectionManager_;
-    std::unique_ptr<Picker> picker_;
+    // ✅ v0.3: 统一选择系统（替代Picker+SelectionManager）
+    std::unique_ptr<SelectionSystem> selectionSystem_;
 
     // 框选状态
     bool isBoxSelecting_ = false;

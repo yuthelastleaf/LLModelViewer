@@ -51,10 +51,6 @@ struct Entity {
     bool visible = true;
     bool dirty = true;  // 标记是否需要重新上传到 GPU
     bool dot = false; // 标记是否以虚线绘制，主要面向2d图形，3d后续看可以怎么处理
-
-    // ✅ v0.2: 选择状态
-    bool selected = false;     // 是否被选中
-    bool hovered = false;      // 是否被鼠标悬停（可选）
     
     // ✅ v0.3: 特殊标记
     bool isGizmo = false;      // 是否是 Gizmo（不参与常规选择）

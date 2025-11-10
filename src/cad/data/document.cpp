@@ -64,29 +64,22 @@ void Document::clearAllDirtyFlags() {
     }
 }
 
+// ❌ 已废弃：selected/hovered标志已移除，由SelectionSystem管理
 void Document::clearAllSelectedFlags()
 {
-    for (auto& kv : map_) {
-        kv.second.selected = false;
-    }
+    // No-op: selected flags removed from Entity
 }
 
+// ❌ 已废弃：selected/hovered标志已移除，由SelectionSystem管理
 void Document::clearAllHoverFlags()
 {
-    for (auto& kv : map_) {
-        kv.second.hovered = false;
-    }
+    // No-op: hovered flags removed from Entity
 }
 
+// ❌ 已废弃：selected/hovered标志已移除，由SelectionSystem管理
 void Document::transHoverToSelected()
 {
-    for (auto& kv : map_) {
-        if (kv.second.hovered) {
-            kv.second.selected = true;
-            kv.second.hovered = false;
-            kv.second.dirty = true; // 标记为脏以更新渲染状态
-        }
-    }
+    // No-op: state management now handled by SelectionSystem
 }
 
 bool Document::updateEndLinePoint(EntityId id, glm::vec3 linepos)

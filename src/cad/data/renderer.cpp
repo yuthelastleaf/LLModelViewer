@@ -337,14 +337,6 @@ void Renderer::syncFromDocument(const Document &doc, const ViewportState &vp, bo
             continue;
         }
 
-        // ✅ v0.2: 更新选择状态
-        auto it = batches_.find(e->id);
-        if (it != batches_.end())
-        {
-            it->second.selected = e->selected;
-            it->second.hovered = e->hovered;
-        }
-
         // 只处理脏实体或需要重新细分的圆弧
         bool needUpdate = e->dirty;
         if (!needUpdate && needRetessellate)
@@ -405,12 +397,10 @@ void Renderer::syncFromDocument(const Document &doc, const ViewportState &vp, bo
         break;
         }
 
-        // ✅ 更新选择状态和虚线标志
-        it = batches_.find(e->id);
+        // ✅ 更新虚线标志（状态由SelectionSystem管理，不在这里设置）
+        auto it = batches_.find(e->id);
         if (it != batches_.end())
         {
-            it->second.selected = e->selected;
-            it->second.hovered = e->hovered;   // ⭐ 修复：设置 hover 状态
             it->second.doted = e->dot;         // 设置虚线标志
         }
     }
@@ -423,6 +413,49 @@ void Renderer::removeBatch(EntityId id)
     {
         freeBatch_(it->second);
         batches_.erase(it);
+    }
+}
+
+// ✅ 新增：更新单个实体的状态
+void Renderer::updateEntityState(EntityId id, bool selected, bool hovered)
+{
+    auto it = batches_.find(id);
+    if (it != batches_.end())
+    {
+        it->second.selected = selected;
+        it->second.hovered = hovered;
+    }
+}
+
+// ✅ 新增：批量更新所有实体状态（高效）
+void Renderer::updateAllEntityStates(const std::unordered_set<EntityId>& selectedIds, 
+                                      const std::unordered_set<EntityId>& hoveredIds)
+{
+    // 先清除所有状态
+    for (auto& kv : batches_)
+    {
+        kv.second.selected = false;
+        kv.second.hovered = false;
+    }
+    
+    // 设置选中状态
+    for (EntityId id : selectedIds)
+    {
+        auto it = batches_.find(id);
+        if (it != batches_.end())
+        {
+            it->second.selected = true;
+        }
+    }
+    
+    // 设置悬停状态（支持多个实体）
+    for (EntityId id : hoveredIds)
+    {
+        auto it = batches_.find(id);
+        if (it != batches_.end())
+        {
+            it->second.hovered = true;
+        }
     }
 }
 
