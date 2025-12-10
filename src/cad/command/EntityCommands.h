@@ -4,6 +4,7 @@
 #include "../data/Document.h"
 #include <glm/glm.hpp>
 #include <vector>
+#include <chrono>
 
 /**
  * ✅ 移动实体命令
@@ -47,6 +48,10 @@ private:
     
     // 执行状态
     bool executed_ = false;
+    
+    // ✅ 时间戳：用于智能合并判断
+    std::chrono::steady_clock::time_point timestamp_;
+    static constexpr int MERGE_TIME_THRESHOLD_MS = 500; // 500ms内的操作可合并
     
     /**
      * 实际执行移动操作

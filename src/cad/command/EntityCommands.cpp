@@ -12,7 +12,8 @@ MoveCommand::MoveCommand(Document* document,
     : document_(document)
     , entityIds_(entityIds)
     , totalOffset_(offset)
-    , currentOffset_(offset) {
+    , currentOffset_(offset)
+    , timestamp_(std::chrono::steady_clock::now()) { // ✅ 记录创建时间
 }
 
 bool MoveCommand::execute() {
@@ -61,6 +62,15 @@ bool MoveCommand::canMergeWith(const Command* other) const {
         return false;
     }
 
+    // ✅ 时间间隔检查：超过500ms不合并
+    auto now = std::chrono::steady_clock::now();
+    auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - timestamp_).count();
+    
+    if (timeDiff > MERGE_TIME_THRESHOLD_MS) {
+        return false; // 时间间隔太长，不合并
+    }
+
     // 只有移动相同实体集合才能合并
     if (entityIds_.size() != moveCmd->entityIds_.size()) {
         return false;
@@ -81,8 +91,16 @@ bool MoveCommand::mergeWith(std::unique_ptr<Command> other) {
         return false;
     }
 
-    // 累积偏移量
+    // ✅ 修复：合并时需要执行新命令的移动操作
+    // 因为调用方已经撤销了预览移动，我们需要重新应用
+    performMove(moveCmd->currentOffset_);
+    
+    // 累积偏移量（用于撤销时计算总偏移）
     totalOffset_ += moveCmd->currentOffset_;
+    
+    // ✅ 更新时间戳，延长合并窗口
+    timestamp_ = std::chrono::steady_clock::now();
+    
     return true;
 }
 

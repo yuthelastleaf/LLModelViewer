@@ -8,6 +8,7 @@
 #include <QSpinBox>
 #include <QRadioButton>
 #include <QButtonGroup>
+#include <QComboBox>  // ✨ 新增：用于hover质量选择
 #include <QPointer>
 #include <QApplication>
 #include <QKeyEvent>
@@ -1037,6 +1038,22 @@ QWidget *CADDemo::createCADControls(QWidget *parent)
     connect(axisCheckBox, &QCheckBox::toggled, this, &CADDemo::setAxisVisible);
     axisCheckBox->setChecked(showAxis_);
     layout->addWidget(axisCheckBox);
+    
+    // ✨ v0.3: Hover质量控制
+    QGroupBox *hoverGroup = new QGroupBox("Hover Quality");
+    QVBoxLayout *hoverLayout = new QVBoxLayout(hoverGroup);
+    
+    QComboBox *hoverQualityCombo = new QComboBox();
+    hoverQualityCombo->addItem("Basic");         // 0
+    hoverQualityCombo->addItem("Enhanced");      // 1  
+    hoverQualityCombo->addItem("Premium");       // 2
+    hoverQualityCombo->setCurrentIndex(1);      // 默认Enhanced
+    
+    connect(hoverQualityCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &CADDemo::setHoverQuality);
+    
+    hoverLayout->addWidget(hoverQualityCombo);
+    layout->addWidget(hoverGroup);
 
     // 重置视图
     QPushButton *resetViewBtn = new QPushButton("Reset View");
@@ -1416,9 +1433,17 @@ void CADDemo::executeMoveCommand() {
     
     // 通过命令系统执行移动
     auto& cmdMgr = CommandManager::instance();
-    if (cmdMgr.executeCommand(std::move(moveCmd), true)) { // 允许合并连续移动
+    // ✅ 智能合并：基于时间间隔，500ms内的连续操作会合并
+    if (cmdMgr.executeCommand(std::move(moveCmd), true)) {
         // 重置移动状态
         transformOffset_ = glm::vec3(0.0f);
+        
+        // ✅ 修复：更新gizmo位置到实体的新中心
+        glm::vec3 newCenter = Transform::getSelectionCenter(selectedEntities);
+        updateGizmoPosition(newCenter);
+        
+        // 标记文档已修改，触发重新渲染
+        documentDirty_ = true;
     } else {
         // 如果命令执行失败，恢复实时预览的移动
         Transform::translateEntities(selectedEntities, transformOffset_);
@@ -1442,6 +1467,64 @@ void CADDemo::onCommandStackChanged() {
         emit statusMessage(statusText);
     }
     
+    // ✅ 修复：撤销/重做后更新gizmo位置
+    if (cad_mode_ == DrawMode::MOVE && selectionSystem_->hasSelection()) {
+        auto selectedEntities = selectionSystem_->getSelectedEntities();
+        glm::vec3 center = Transform::getSelectionCenter(selectedEntities);
+        updateGizmoPosition(center);
+    }
+    
+    // 标记文档需要重新渲染
+    documentDirty_ = true;
+    
     // 如果有UI的话，这里可以更新undo/redo按钮状态
     // updateUndoRedoButtons();
+}
+
+// ============================================
+// ✨ v0.3: 视觉效果配置
+// ============================================
+
+void CADDemo::setHoverQuality(int quality) {
+    if (!renderer_) {
+        return;
+    }
+    
+    auto& hoverStyle = renderer_->getHoverStyle();
+    
+    switch (quality) {
+        case 0: // Basic - 简单矩形效果
+            hoverStyle.enableRounding = false;
+            hoverStyle.featherWidth = 0.5f;
+            hoverStyle.glowIntensity = 0.0f;
+            hoverStyle.roundRadius = 0.0f;
+            break;
+            
+        case 1: // Enhanced - 圆角 + 轻微抗锯齿
+            hoverStyle.enableRounding = true;
+            hoverStyle.featherWidth = 1.0f;
+            hoverStyle.glowIntensity = 0.2f;
+            hoverStyle.roundRadius = 1.5f;
+            break;
+            
+        case 2: // Premium - 完整效果
+            hoverStyle.enableRounding = true;
+            hoverStyle.featherWidth = 2.0f;
+            hoverStyle.glowIntensity = 0.4f;
+            hoverStyle.roundRadius = 2.5f;
+            hoverStyle.lineWidth = 3.0f;
+            break;
+            
+        default:
+            quality = 1; // 默认为Enhanced
+            setHoverQuality(1);
+            break;
+    }
+    
+    // 应用新样式
+    renderer_->setHoverStyle(hoverStyle);
+    
+    emit statusMessage(QString("Hover quality set to %1")
+                      .arg(quality == 0 ? "Basic" : 
+                           quality == 1 ? "Enhanced" : "Premium"));
 }

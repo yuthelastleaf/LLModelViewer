@@ -98,6 +98,9 @@ public slots:
     void selectAll();
     void invertSelection();
     void deleteSelected();
+    
+    // ✨ v0.3: 视觉效果配置
+    void setHoverQuality(int quality); // 0=Basic, 1=Enhanced, 2=Premium
 
     // ✅ v0.4: 命令系统槽
     void onCommandStackChanged(); // 响应命令栈变化

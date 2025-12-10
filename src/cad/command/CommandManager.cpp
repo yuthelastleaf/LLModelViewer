@@ -70,6 +70,9 @@ bool CommandManager::executeCommand(CommandPtr command, bool canMerge) {
         qWarning() << "CommandManager: Null command";
         return false;
     }
+    
+    qDebug() << "CommandManager::executeCommand() -" << command->getDescription() 
+             << ", canMerge:" << canMerge;
 
     // 如果是批量操作模式，收集命令
     if (isRecordingMacro_) {
@@ -112,14 +115,21 @@ bool CommandManager::executeCommand(CommandPtr command, bool canMerge) {
 
 bool CommandManager::undo() {
     if (!canUndo()) {
+        qDebug() << "CommandManager::undo() - Nothing to undo, stack size:" << undoStack_.size();
         return false;
     }
 
+    qDebug() << "CommandManager::undo() - Undoing command, stack size before:" << undoStack_.size();
+    
     auto command = std::move(undoStack_.back());
     undoStack_.pop_back();
+    
+    qDebug() << "CommandManager::undo() - Command:" << command->getDescription();
 
     if (command->undo()) {
         redoStack_.push_back(std::move(command));
+        qDebug() << "CommandManager::undo() - Success, undo stack size:" << undoStack_.size() 
+                 << ", redo stack size:" << redoStack_.size();
         emit stackChanged();
         return true;
     } else {
@@ -275,6 +285,8 @@ bool CommandManager::tryMergeWithTop(CommandPtr& command) {
 
     auto& topCommand = undoStack_.back();
     if (topCommand->canMergeWith(command.get())) {
+        qDebug() << "CommandManager::tryMergeWithTop() - Merging" << command->getDescription() 
+                 << "with" << topCommand->getDescription();
         return topCommand->mergeWith(std::move(command));
     }
 

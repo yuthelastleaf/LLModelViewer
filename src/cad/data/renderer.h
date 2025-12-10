@@ -111,12 +111,20 @@ public:
     std::uint32_t getHoverColor() const { return hoverColor_; }
 
 public:
+    // ✨ HoverStyle 结构体定义（移动到前面以解决作用域问题）
     struct HoverStyle {
         std::uint32_t color;        // 主颜色
         float lineWidth;            // 线宽（像素）
         bool enableGlow;            // 是否启用发光效果
         std::uint32_t glowColor;    // 发光颜色
         float glowWidth;            // 发光宽度（像素）
+        
+        // ✨ 新增：增强的视觉效果配置
+        float roundRadius;          // 圆角半径（像素）
+        bool enableRounding;        // 是否启用圆角端点
+        float featherWidth;         // 边缘羽化宽度（像素）
+        float glowIntensity;        // 发光强度 [0.0-1.0]
+        float antiAliasStrength;    // 抗锯齿强度 [0.0-1.0]
         
         // ✅ 默认构造函数（提供默认值）
         HoverStyle()
@@ -125,8 +133,19 @@ public:
             , enableGlow(true)
             , glowColor(0x00FFFF80)     // 半透明青色
             , glowWidth(4.0f)
+            // ✨ 新增字段的默认值
+            , roundRadius(1.5f)         // 轻微圆角
+            , enableRounding(true)      // 默认启用圆角
+            , featherWidth(1.0f)        // 1像素羽化
+            , glowIntensity(0.3f)       // 30%发光强度
+            , antiAliasStrength(1.0f)   // 完全抗锯齿
         {}
     };
+    
+    // ✨ 新增：Hover样式配置
+    void setHoverStyle(const HoverStyle& style) { hoverStyle_ = style; }
+    const HoverStyle& getHoverStyle() const { return hoverStyle_; }
+    HoverStyle& getHoverStyle() { return hoverStyle_; }
     
     struct SelectionStyle {
         std::uint32_t color;

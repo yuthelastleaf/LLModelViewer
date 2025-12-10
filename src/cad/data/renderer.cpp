@@ -647,6 +647,12 @@ void Renderer::renderBatch(const GpuBatch &batch, const glm::mat4 &mvp, const Vi
             shader_hover_Lines_->use();
             shader_hover_Lines_->setMat4("mvp", mvp);
             shader_hover_Lines_->setVec2("viewport", glm::vec2(vp.width, vp.height));
+            
+            // ✨ 新增：设置增强的hover效果参数
+            shader_hover_Lines_->setFloat("roundRadius", hoverStyle_.roundRadius);
+            shader_hover_Lines_->setBool("enableRounding", hoverStyle_.enableRounding);
+            shader_hover_Lines_->setFloat("featherWidth", hoverStyle_.featherWidth);
+            shader_hover_Lines_->setFloat("glowIntensity", hoverStyle_.glowIntensity);
 
             // 第一层：外发光（更粗、半透明）
             shader_hover_Lines_->setFloat("thickness", hoverStyle_.lineWidth * 2.5f);
