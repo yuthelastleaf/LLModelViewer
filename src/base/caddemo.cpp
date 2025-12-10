@@ -362,14 +362,6 @@ void CADDemo::processMousePress(QPoint point, glm::vec3 wpoint)
             pickResult = selectionSystem_->pickUnified(point, viewportState_, 5.0f);
         }
 
-        // ✅ 调试：检查hover和click的一致性
-        if (point == lastHoverPos_ && pickResult.has_value() && 
-            pickResult->entityId != lastHoveredId_) {
-            qDebug() << "⚠️  Hover/Click不一致！Hover:" << lastHoveredId_ 
-                     << "Click:" << pickResult->entityId 
-                     << "位置:" << point.x() << point.y();
-        }
-
         // 处理拾取结果
         if (pickResult.has_value())
         {
