@@ -167,6 +167,9 @@ set(CAD_BASE_SOURCES
     src/cad/command/CommandManager.cpp
     src/cad/command/EntityCommands.h
     src/cad/command/EntityCommands.cpp
+    # ✅ v0.4: DXF 文件支持
+    src/cad/io/DxfHandler.h
+    src/cad/io/DxfHandler.cpp
 )
 
 # 具体 Demo 实现

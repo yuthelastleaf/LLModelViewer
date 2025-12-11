@@ -89,12 +89,12 @@ void Camera::processMouseMovement(float deltaX, float deltaY) {
 void Camera::processMouseScroll(float deltaY) {
     if (type == CameraType::ORTHO_2D) {
         radius *= (1.0f - deltaY * zoomSpeed);
-        radius = std::clamp(radius, 0.1f, 100.0f);
+        radius = std::clamp(radius, 0.1f, 10000.0f);  // 扩大 2D 缩放范围
         updateOrbitPosition();
     }
     else if (type == CameraType::ORBIT) {
         radius -= deltaY * scrollSensitivity;
-        radius = std::clamp(radius, 1.0f, 50.0f);
+        radius = std::clamp(radius, 1.0f, 1000.0f);   // 扩大 3D 缩放范围
         updateOrbitPosition();
     }
     else {
@@ -304,6 +304,64 @@ void Camera::SetIsometricView(float distance) {
     SetType(CameraType::ORBIT);
     SetOrbitParams(distance, 45.0f, 35.264f); // 等轴测
     is2DMode = false;
+}
+
+// ============================================
+// Zoom to Fit - 适应视图范围
+// ============================================
+
+void Camera::zoomToFit(const glm::vec3& minBound, const glm::vec3& maxBound, float padding) {
+    // 计算包围盒中心和大小
+    glm::vec3 center = (minBound + maxBound) * 0.5f;
+    glm::vec3 size = maxBound - minBound;
+    
+    // 根据视图方向计算需要的视图范围
+    float contentWidth = 0.0f;
+    float contentHeight = 0.0f;
+    
+    if (is2DMode) {
+        // 2D 模式：根据视图方向选择合适的范围
+        switch (view2DOrientation) {
+            case View2DOrientation::TOP:    // XY 平面
+                contentWidth = size.x;
+                contentHeight = size.y;
+                break;
+            case View2DOrientation::FRONT:  // XZ 平面
+                contentWidth = size.x;
+                contentHeight = size.z;
+                break;
+            case View2DOrientation::RIGHT:  // YZ 平面
+                contentWidth = size.y;
+                contentHeight = size.z;
+                break;
+        }
+    } else {
+        // 3D 模式：使用最大范围
+        contentWidth = std::max(size.x, size.z);
+        contentHeight = size.y;
+    }
+    
+    // 应用边距
+    contentWidth *= padding;
+    contentHeight *= padding;
+    
+    // 根据宽高比选择合适的 radius
+    float aspectRatio = static_cast<float>(viewportWidth) / viewportHeight;
+    
+    // radius 对应于视口高度的一半，我们需要确保内容完全可见
+    float radiusForWidth = contentWidth / (2.0f * aspectRatio);   // 如果以宽度为限制
+    float radiusForHeight = contentHeight / 2.0f;                  // 如果以高度为限制
+    
+    // 取较大值确保内容完全可见
+    radius = std::max(radiusForWidth, radiusForHeight);
+    
+    // 确保 radius 在合理范围内
+    radius = std::clamp(radius, 0.1f, 10000.0f);
+    
+    // 设置相机参数
+    target = center;
+    
+    updateOrbitPosition();
 }
 
 // ============================================

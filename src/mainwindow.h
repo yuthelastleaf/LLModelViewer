@@ -15,6 +15,10 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+private slots:
+    void importDxf();
+    void exportDxf();
+
 private:
     void registerDemos();
     void createMenus();

@@ -72,6 +72,7 @@ public slots:
     void setGridVisible(bool visible);
     void setAxisVisible(bool visible);
     void resetView();
+    void zoomToFit(const glm::vec3& minBound, const glm::vec3& maxBound);  // ✅ v0.4
     
     // 2D/3D 模式切换
     void switch2DMode(bool enable);

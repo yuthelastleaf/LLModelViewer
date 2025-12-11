@@ -50,13 +50,13 @@ public:
     // 相机属性
     float fov = 45.0f;
     float nearPlane = 0.1f;
-    float farPlane = 100.0f;
+    float farPlane = 50000.0f;  // ✅ 增大远平面以支持大范围缩放
 
     // 控制参数
     float mouseSensitivity = 100.0f;
     float scrollSensitivity = 2.0f;
     float moveSpeed = 2.5f;
-    float panSensitivity = 1.0f;    // 2D 平移灵敏度
+    float panSensitivity = 3.0f;     // 2D 平移灵敏度（默认 3x）
     float zoomSpeed = 0.1f;          // 2D 缩放速度
 
     // ✅ 新增：视口信息
@@ -118,6 +118,9 @@ public:
     void SetRightView(float distance = 10.0f);         // 右视图
     void SetIsometricView(float distance = 10.0f);     // 等轴测视图
     
+    // ✅ v0.4: Zoom to Fit - 适应视图范围
+    void zoomToFit(const glm::vec3& minBound, const glm::vec3& maxBound, float padding = 1.1f);
+    
     // 轨道相机参数设置
     void SetOrbitParams(float newRadius, float newYaw, float newPitch);
     
@@ -137,6 +140,12 @@ public:
     
     // 重置相机到默认状态
     void reset();
+    
+    // 设置视口尺寸
+    void setViewportSize(int width, int height) {
+        viewportWidth = width;
+        viewportHeight = height;
+    }
     
     // ============================================
     // 公共工具方法

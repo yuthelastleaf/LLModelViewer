@@ -102,6 +102,9 @@ public:
     // ✅ v0.3: Gizmo 相关
     EntityId addGizmoAxis(const glm::vec3& origin, const glm::vec3& direction, 
                           float length, int axisIndex, const Style& s = {});
+    
+    // ✅ v0.4: 获取所有实体的包围盒
+    void getBoundingBox(glm::vec3& minBound, glm::vec3& maxBound) const;
 
 private:
     std::unordered_map<EntityId, Entity> map_;

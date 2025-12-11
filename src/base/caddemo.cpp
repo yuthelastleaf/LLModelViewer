@@ -765,6 +765,16 @@ void CADDemo::resetView()
     emit parameterChanged();
 }
 
+void CADDemo::zoomToFit(const glm::vec3& minBound, const glm::vec3& maxBound)
+{
+    camera->zoomToFit(minBound, maxBound, 1.2f);  // 20% 边距
+    viewportState_.updateWorldPerPixel();
+    documentDirty_ = true;
+    
+    emit statusMessage("Zoomed to fit content");
+    emit parameterChanged();
+}
+
 void CADDemo::switch2DMode(bool enable)
 {
     camera->set2DMode(enable);
@@ -1030,6 +1040,28 @@ QWidget *CADDemo::createCADControls(QWidget *parent)
     connect(axisCheckBox, &QCheckBox::toggled, this, &CADDemo::setAxisVisible);
     axisCheckBox->setChecked(showAxis_);
     layout->addWidget(axisCheckBox);
+    
+    // ✨ v0.4: 2D 平移灵敏度
+    QGroupBox *panGroup = new QGroupBox("2D Pan Sensitivity");
+    QVBoxLayout *panLayout = new QVBoxLayout(panGroup);
+    
+    QSlider *panSlider = new QSlider(Qt::Horizontal);
+    panSlider->setRange(1, 100);  // 0.1x 到 10x
+    panSlider->setValue(static_cast<int>(camera->panSensitivity * 10.0f));
+    
+    QLabel *panLabel = new QLabel(QString("%1x").arg(camera->panSensitivity, 0, 'f', 1));
+    
+    connect(panSlider, &QSlider::valueChanged, [this, panLabel](int value) {
+        float sensitivity = value / 10.0f;  // 0.1 到 10.0
+        camera->panSensitivity = sensitivity;
+        panLabel->setText(QString("%1x").arg(sensitivity, 0, 'f', 1));
+    });
+    
+    QHBoxLayout *panRow = new QHBoxLayout();
+    panRow->addWidget(panSlider);
+    panRow->addWidget(panLabel);
+    panLayout->addLayout(panRow);
+    layout->addWidget(panGroup);
     
     // ✨ v0.3: Hover质量控制
     QGroupBox *hoverGroup = new QGroupBox("Hover Quality");

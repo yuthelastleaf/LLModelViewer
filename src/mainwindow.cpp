@@ -2,6 +2,7 @@
 #include "base/opengl/glwidget.h"
 #include "demo/triangle/TriangleDemo.h"
 #include "base/caddemo.h"
+#include "cad/io/DxfHandler.h"
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
@@ -10,6 +11,7 @@
 #include <QLabel>
 #include <QApplication>
 #include <QMessageBox>
+#include <QFileDialog>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -57,6 +59,22 @@ void MainWindow::createMenus()
 {
     // 文件菜单
     QMenu *fileMenu = menuBar()->addMenu("&File");
+    
+    // DXF 导入
+    QAction *importDxfAction = new QAction("&Import DXF...", this);
+    importDxfAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_O));
+    importDxfAction->setStatusTip("Import entities from DXF file");
+    connect(importDxfAction, &QAction::triggered, this, &MainWindow::importDxf);
+    fileMenu->addAction(importDxfAction);
+    
+    // DXF 导出
+    QAction *exportDxfAction = new QAction("&Export DXF...", this);
+    exportDxfAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_S));
+    exportDxfAction->setStatusTip("Export entities to DXF file");
+    connect(exportDxfAction, &QAction::triggered, this, &MainWindow::exportDxf);
+    fileMenu->addAction(exportDxfAction);
+    
+    fileMenu->addSeparator();
     
     QAction *exitAction = new QAction("E&xit", this);
     exitAction->setShortcut(QKeySequence::Quit);
@@ -192,4 +210,76 @@ void MainWindow::showAbout()
         "</ul>"
         "<p>Built with Qt and OpenGL 3.3+</p>"
     );
+}
+
+void MainWindow::importDxf()
+{
+    QString filePath = QFileDialog::getOpenFileName(
+        this,
+        "Import DXF File",
+        QString(),
+        "DXF Files (*.dxf);;All Files (*.*)"
+    );
+    
+    if (filePath.isEmpty()) return;
+    
+    // 确保 CAD Demo 已加载
+    if (glWidget->getCurrentDemoId() != "cad") {
+        glWidget->loadDemo("cad");
+    }
+    
+    // 获取 CADDemo
+    CADDemo* cadDemo = dynamic_cast<CADDemo*>(glWidget->getCurrentDemo());
+    if (!cadDemo) {
+        QMessageBox::warning(this, "Import Error", "Failed to load CAD demo.");
+        return;
+    }
+    
+    // 导入 DXF
+    Document* doc = cadDemo->getDocument();
+    if (DxfHandler::importFromFile(filePath, doc)) {
+        // ✅ 自动 Zoom to Fit
+        glm::vec3 minBound, maxBound;
+        doc->getBoundingBox(minBound, maxBound);
+        cadDemo->zoomToFit(minBound, maxBound);
+        
+        statusBar()->showMessage(QString("Imported: %1").arg(filePath), 3000);
+        glWidget->update();
+    } else {
+        QMessageBox::warning(this, "Import Error", 
+            QString("Failed to import DXF file:\n%1").arg(DxfHandler::getLastError()));
+    }
+}
+
+void MainWindow::exportDxf()
+{
+    // 检查是否有 CAD Demo
+    CADDemo* cadDemo = dynamic_cast<CADDemo*>(glWidget->getCurrentDemo());
+    if (!cadDemo) {
+        QMessageBox::warning(this, "Export Error", "Please load CAD demo first.");
+        return;
+    }
+    
+    QString filePath = QFileDialog::getSaveFileName(
+        this,
+        "Export DXF File",
+        QString(),
+        "DXF Files (*.dxf)"
+    );
+    
+    if (filePath.isEmpty()) return;
+    
+    // 确保扩展名
+    if (!filePath.endsWith(".dxf", Qt::CaseInsensitive)) {
+        filePath += ".dxf";
+    }
+    
+    // 导出 DXF
+    const Document* doc = cadDemo->getDocument();
+    if (DxfHandler::exportToFile(filePath, doc)) {
+        statusBar()->showMessage(QString("Exported: %1").arg(filePath), 3000);
+    } else {
+        QMessageBox::warning(this, "Export Error",
+            QString("Failed to export DXF file:\n%1").arg(DxfHandler::getLastError()));
+    }
 }

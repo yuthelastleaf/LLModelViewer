@@ -95,6 +95,12 @@ void Demo::resizeViewport(int width, int height)
 {
     viewportWidth = width;
     viewportHeight = height;
+    
+    // ✅ 同步更新 Camera 的视口尺寸
+    if (camera) {
+        camera->setViewportSize(width, height);
+    }
+    
     updateViewportState();
 }
 

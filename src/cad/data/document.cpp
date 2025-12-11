@@ -1,4 +1,5 @@
 #include "document.h"
+#include <limits>
 
 const Entity* Document::get(EntityId id) const {
     auto it = map_.find(id);
@@ -222,5 +223,63 @@ void Document::notifyEntityChanged(EntityId id) {
     auto it = map_.find(id);
     if (it != map_.end()) {
         it->second.dirty = true;  // 标记需要重新上传到GPU
+    }
+}
+
+void Document::getBoundingBox(glm::vec3& minBound, glm::vec3& maxBound) const {
+    minBound = glm::vec3(std::numeric_limits<float>::max());
+    maxBound = glm::vec3(std::numeric_limits<float>::lowest());
+    
+    bool hasEntities = false;
+    
+    for (const auto& [id, entity] : map_) {
+        if (!entity.visible || entity.isGizmo) continue;
+        
+        hasEntities = true;
+        
+        // 根据实体类型获取点
+        std::visit([&](const auto& geom) {
+            using T = std::decay_t<decltype(geom)>;
+            
+            if constexpr (std::is_same_v<T, Line>) {
+                minBound = glm::min(minBound, geom.p0);
+                minBound = glm::min(minBound, geom.p1);
+                maxBound = glm::max(maxBound, geom.p0);
+                maxBound = glm::max(maxBound, geom.p1);
+            }
+            else if constexpr (std::is_same_v<T, Polyline>) {
+                for (const auto& pt : geom.pts) {
+                    minBound = glm::min(minBound, pt);
+                    maxBound = glm::max(maxBound, pt);
+                }
+            }
+            else if constexpr (std::is_same_v<T, Rectangle>) {
+                minBound = glm::min(minBound, geom.p0);
+                minBound = glm::min(minBound, geom.p1);
+                maxBound = glm::max(maxBound, geom.p0);
+                maxBound = glm::max(maxBound, geom.p1);
+            }
+            else if constexpr (std::is_same_v<T, Circle>) {
+                glm::vec3 rVec(geom.r, geom.r, 0.0f);
+                minBound = glm::min(minBound, geom.c - rVec);
+                maxBound = glm::max(maxBound, geom.c + rVec);
+            }
+            else if constexpr (std::is_same_v<T, Arc>) {
+                glm::vec3 rVec(geom.r, geom.r, 0.0f);
+                minBound = glm::min(minBound, geom.c - rVec);
+                maxBound = glm::max(maxBound, geom.c + rVec);
+            }
+            else if constexpr (std::is_same_v<T, Box>) {
+                glm::vec3 halfSize(geom.size * 0.5f);
+                minBound = glm::min(minBound, geom.center - halfSize);
+                maxBound = glm::max(maxBound, geom.center + halfSize);
+            }
+        }, entity.geom);
+    }
+    
+    // 如果没有实体，返回原点周围的默认范围
+    if (!hasEntities) {
+        minBound = glm::vec3(-10.0f);
+        maxBound = glm::vec3(10.0f);
     }
 }
